@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::kx::SupportedKxGroup;
 #[cfg(feature = "logging")]
 use crate::log::trace;
+use crate::msgs::ech::EncryptedClientHello;
 #[cfg(feature = "quic")]
 use crate::msgs::enums::AlertDescription;
 use crate::msgs::handshake::ClientExtension;
@@ -217,6 +218,9 @@ pub enum ServerName {
     /// The server is identified by an IP address. SNI is not
     /// done.
     IpAddress(IpAddr),
+
+    /// Using an EncryptedClientHello (Inner and Outer DNS names)
+    EncryptedClientHello(Box<EncryptedClientHello>),
 }
 
 impl ServerName {
