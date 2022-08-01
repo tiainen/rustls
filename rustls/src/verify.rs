@@ -344,6 +344,9 @@ impl ServerCertVerifier for WebPkiVerifier {
             ServerName::DnsName(dns_name) => dns_name,
             ServerName::IpAddress(_) => {
                 return Err(Error::UnsupportedNameType);
+            },
+            ServerName::EncryptedClientHello(ech) => {
+                &ech.config_contents.public_name
             }
         };
 
@@ -368,6 +371,32 @@ impl ServerCertVerifier for WebPkiVerifier {
         cert.verify_is_valid_for_dns_name(dns_name.0.as_ref())
             .map_err(pki_error)
             .map(|_| ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &Certificate,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_signed_struct(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &Certificate,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_tls13(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        WebPkiVerifier::verification_schemes()
+    }
+
+    fn request_scts(&self) -> bool {
+        true
     }
 }
 

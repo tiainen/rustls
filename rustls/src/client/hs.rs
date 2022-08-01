@@ -208,7 +208,10 @@ fn emit_client_hello_for_retry(
         (Vec::new(), ProtocolVersion::Unknown(0))
     };
 
-    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2) && !cx.common.is_quic();
+    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2) && !cx.common.is_quic() && match server_name {
+        ServerName::EncryptedClientHello(_) => false,
+        _ => true,
+    };
     let support_tls13 = config.supports_version(ProtocolVersion::TLSv1_3);
 
     let mut supported_versions = Vec::new();

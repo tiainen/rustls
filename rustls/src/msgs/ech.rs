@@ -19,7 +19,7 @@ use hpke_rs_crypto::{
     types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm},
 };
 use hpke_rs_rust_crypto::HpkeRustCrypto;
-use ring::digest::Algorithm;
+use ring::digest::{Algorithm, Context};
 use webpki;
 
 const HPKE_INFO: &[u8; 8] = b"tls ech\0";
@@ -46,7 +46,7 @@ pub struct EncryptedClientHello {
 }
 
 #[derive(Debug)]
-struct HpkeParams {
+pub struct HpkeParams {
     kem: KemAlgorithm,
     kdf: KdfAlgorithm,
     aead: AeadAlgorithm,
@@ -197,7 +197,7 @@ impl EncryptedClientHello {
             //  by a TLS 1.3 implementation other than an initial ClientHello
             //  (i.e., one not generated after a HelloRetryRequest)"
             version: ProtocolVersion::TLSv1_0,
-            payload: MessagePayload::Handshake(chp),
+            payload: MessagePayload::handshake(chp),
         });
 
         // Add the outer SNI
@@ -205,7 +205,7 @@ impl EncryptedClientHello {
             0,
             ClientExtension::make_sni(
                 self.config_contents
-                    .public_name
+                    .public_name.0
                     .as_ref(),
             ),
         );
@@ -272,7 +272,7 @@ impl EncryptedClientHello {
         }
     }
 
-    pub fn confirm_ech(
+    pub(crate) fn confirm_ech(
         &self,
         ks: &mut KeyScheduleHandshake,
         server_hello: &ServerHelloPayload,
@@ -286,7 +286,7 @@ impl EncryptedClientHello {
 
         // A confirmation transcript calculated from the ClientHelloInner and the ServerHello,
         // with the last 8 bytes of the server random modified to be zeros.
-        let conf = confirmation_transcript(m, server_hello, suite.get_hash());
+        let conf = confirmation_transcript(m, server_hello, suite.hash_algorithm());
 
         // Derive a secret from the current handshake and the confirmation transcript.
         let derived = ks.server_ech_confirmation_secret(&conf.get_current_hash());
@@ -301,8 +301,11 @@ impl EncryptedClientHello {
         // calculated from the ClientHelloInner, and the handshake should also use the client random
         // from the ClientHelloInner. The ServerHello is added to the transcript next, whether or
         // not the ECH offer was accepted.
-        let mut inner_transcript = HandshakeHash::new();
-        inner_transcript.start_hash(suite.get_hash());
+        let ctx = Context::new(suite.hash_algorithm());
+        let mut inner_transcript = HandshakeHash {
+            ctx,
+            client_auth: None
+        };
         inner_transcript.add_message(m);
         Ok((self.inner_random, inner_transcript))
     }
@@ -313,8 +316,11 @@ fn confirmation_transcript(
     server_hello: &ServerHelloPayload,
     alg: &'static Algorithm,
 ) -> HandshakeHash {
-    let mut confirmation_transcript = HandshakeHash::new();
-    confirmation_transcript.start_hash(alg);
+    let ctx = Context::new(alg);
+    let mut confirmation_transcript = HandshakeHash {
+        ctx,
+        client_auth: None
+    };
     confirmation_transcript.add_message(m);
     let shc = server_hello_conf(server_hello);
     confirmation_transcript.update_raw(&shc);

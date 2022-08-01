@@ -11,6 +11,7 @@ use crate::msgs::enums::{
 };
 use crate::msgs::enums::{EchClientHelloType, EchVersion, AEAD, KDF, KEM};
 use crate::rand;
+use crate::verify;
 
 #[cfg(feature = "logging")]
 use crate::log::warn;
@@ -2460,7 +2461,7 @@ impl Codec for HpkeKeyConfig {
 pub struct EchConfigContents {
     pub hpke_key_config: HpkeKeyConfig,
     pub maximum_name_length: u16,
-    pub public_name: webpki::DnsName,
+    pub public_name: verify::DnsName,
     pub extensions: PayloadU16,
 }
 
@@ -2476,10 +2477,10 @@ impl Codec for EchConfigContents {
         Some(EchConfigContents {
             hpke_key_config: HpkeKeyConfig::read(r)?,
             maximum_name_length: u16::read(r)?,
-            public_name: webpki::DnsName::from({
+            public_name: verify::DnsName(webpki::DnsName::from({
                 let payload = PayloadU16::read(r)?;
                 webpki::DnsNameRef::try_from_ascii(payload.into_inner().as_slice()).ok()?
-            }),
+            })),
             extensions: PayloadU16::read(r)?,
         })
     }

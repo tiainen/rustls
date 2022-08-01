@@ -20,6 +20,7 @@ rustls = { path = "../rustls" }
 rustls-pemfile = "1.0.0"
 sct = "0.7"
 trust-dns-resolver = { version="0.21.2", features = ["dns-over-rustls", "dns-over-https-rustls"] }
+webpki = { version = "0.22.0", features = ["alloc", "std"] }
 
 [dev-dependencies]
 docopt = "~1.1"
@@ -28,7 +29,7 @@ mio = { version = "0.8", features = ["net", "os-poll"] }
 regex = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
-webpki-roots = "0.22"
+webpki-roots = "0.22.4"
 ring = "0.16.20"
 
 [[example]]
@@ -38,3 +39,7 @@ path = "examples/tlsclient.rs"
 [[example]]
 name = "tlsserver"
 path = "examples/tlsserver.rs"
+
+[[example]]
+name = "ech"
+path = "examples/tls_ech_client.rs"
