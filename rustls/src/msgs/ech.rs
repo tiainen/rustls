@@ -59,6 +59,7 @@ impl EncryptedClientHello {
     ) -> Result<EncryptedClientHello, Error> {
         let configs: EchConfigList = EchConfigList::read(&mut Reader::init(config_bytes))
             .ok_or_else(|| Error::General("Couldn't parse ECH record.".to_string()))?;
+        eprintln!("{:?}", configs);
         let (config_contents, hpke_info, (suite, hpke_params)) = configs
             .iter()
             .find_map(|config| {
@@ -95,6 +96,7 @@ impl EncryptedClientHello {
         let mut inner_random = [0u8; 32];
         rand::fill_random(&mut inner_random).unwrap();
 
+        eprintln!("name: {:?}", name);
         Ok(EncryptedClientHello {
             hostname: name.to_owned(),
             hpke_params,

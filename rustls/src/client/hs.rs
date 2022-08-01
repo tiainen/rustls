@@ -187,7 +187,7 @@ fn emit_client_hello_for_retry(
     mut hello: ClientHelloDetails,
     session_id: Option<SessionID>,
     retryreq: Option<&HelloRetryRequest>,
-    server_name: ServerName,
+    mut server_name: ServerName,
     key_share: Option<kx::KeyExchange>,
     extra_exts: Vec<ClientExtension>,
     may_send_sct_list: bool,
@@ -340,16 +340,21 @@ fn emit_client_hello_for_retry(
     // We don't do renegotiation at all, in fact.
     cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
 
-    let mut chp = HandshakeMessagePayload {
-        typ: HandshakeType::ClientHello,
-        payload: HandshakePayload::ClientHello(ClientHelloPayload {
-            client_version: ProtocolVersion::TLSv1_2,
-            random,
-            session_id,
-            cipher_suites,
-            compression_methods: vec![Compression::Null],
-            extensions: exts,
-        }),
+    let initial_payload = ClientHelloPayload {
+        client_version: ProtocolVersion::TLSv1_2,
+        random,
+        session_id,
+        cipher_suites,
+        compression_methods: vec![Compression::Null],
+        extensions: exts,
+    };
+
+    let mut chp = match server_name {
+        ServerName::EncryptedClientHello(ref mut ech) => ech.encode(initial_payload),
+        _ => HandshakeMessagePayload {
+            typ: HandshakeType::ClientHello,
+            payload: HandshakePayload::ClientHello(initial_payload),
+        },
     };
 
     let early_key_schedule = if let Some(resuming) = fill_in_binder {
@@ -470,7 +475,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
     fn handle(mut self: Box<Self>, cx: &mut ClientContext<'_>, m: Message) -> NextStateOrError {
         let server_hello =
             require_handshake_msg!(m, HandshakeType::ServerHello, HandshakePayload::ServerHello)?;
-        trace!("We got ServerHello {:#?}", server_hello);
+        eprintln!("We got ServerHello {:#?}", server_hello);
 
         use crate::ProtocolVersion::{TLSv1_2, TLSv1_3};
         let tls13_supported = self.config.supports_version(TLSv1_3);

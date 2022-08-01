@@ -73,6 +73,7 @@ pub(super) fn handle_server_hello(
     our_key_share: kx::KeyExchange,
     mut sent_tls13_fake_ccs: bool,
 ) -> hs::NextStateOrError {
+    eprintln!("in server hello...");
     validate_server_hello(cx.common, server_hello)?;
 
     let their_key_share = server_hello
@@ -390,7 +391,7 @@ impl State<ClientConnectionData> for ExpectEncryptedExtensions {
             HandshakeType::EncryptedExtensions,
             HandshakePayload::EncryptedExtensions
         )?;
-        debug!("TLS1.3 encrypted extensions: {:?}", exts);
+        eprintln!("TLS1.3 encrypted extensions: {:?}", exts);
         self.transcript.add_message(&m);
 
         validate_encrypted_extensions(cx.common, &self.hello, exts)?;
