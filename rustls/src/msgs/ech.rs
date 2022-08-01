@@ -31,6 +31,7 @@ fn hpke_info(config: &EchConfig) -> Vec<u8> {
     info
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct EncryptedClientHello {
     pub hostname: webpki::DnsName,
     pub hpke_params: HpkeParams,
@@ -44,6 +45,7 @@ pub struct EncryptedClientHello {
     // outer_only_exts?
 }
 
+#[derive(Debug, Eq, PartialEq)]
 struct HpkeParams {
     kem: KemAlgorithm,
     kdf: KdfAlgorithm,
