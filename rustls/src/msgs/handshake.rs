@@ -2460,7 +2460,7 @@ impl Codec for HpkeKeyConfig {
 #[derive(Clone, Debug)]
 pub struct EchConfigContents {
     pub hpke_key_config: HpkeKeyConfig,
-    pub maximum_name_length: u16,
+    pub maximum_name_length: u8,
     pub public_name: verify::DnsName,
     pub extensions: PayloadU16,
 }
@@ -2476,9 +2476,9 @@ impl Codec for EchConfigContents {
     fn read(r: &mut Reader) -> Option<EchConfigContents> {
         Some(EchConfigContents {
             hpke_key_config: HpkeKeyConfig::read(r)?,
-            maximum_name_length: u16::read(r)?,
+            maximum_name_length: u8::read(r)?,
             public_name: verify::DnsName(webpki::DnsName::from({
-                let payload = PayloadU16::read(r)?;
+                let payload = PayloadU8::read(r)?;
                 webpki::DnsNameRef::try_from_ascii(payload.into_inner().as_slice()).ok()?
             })),
             extensions: PayloadU16::read(r)?,
