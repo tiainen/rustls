@@ -208,7 +208,7 @@ impl ClientConfig {
 /// # let _: ServerName = x;
 /// ```
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq)]
 pub enum ServerName {
     /// The server is identified by a DNS name.  The name
     /// is sent in the TLS Server Name Indication (SNI)
@@ -231,6 +231,7 @@ impl ServerName {
         match self {
             Self::DnsName(dns_name) => Some(dns_name.0.as_ref()),
             Self::IpAddress(_) => None,
+            Self::EncryptedClientHello(ech) => Some(ech.hostname.as_ref()),
         }
     }
 
@@ -239,6 +240,7 @@ impl ServerName {
         enum UniqueTypeCode {
             DnsName = 0x01,
             IpAddr = 0x02,
+            Ech = 0x03,
         }
 
         match self {
@@ -262,6 +264,9 @@ impl ServerName {
                 r.extend_from_slice(bytes);
 
                 r
+            }
+            Self::EncryptedClientHello(ech) => {
+                Vec::new()
             }
         }
     }
