@@ -335,3 +335,89 @@ fn server_hello_conf(server_hello: &ServerHelloPayload) -> Vec<u8> {
     hmp_encoded.append(&mut encoded_sh);
     hmp_encoded
 }
+
+mod test {
+    use crate::msgs::enums::{EchVersion, KEM, KDF, AEAD};
+
+    use super::*;
+    
+    const BASE64_ECHCONFIG_LIST: &str = "AED+DQA8AAAgACAxoIJyV36iDlfFRmqE+ho2PxXE0EISPfUUJYKCy6T8VwAIAAEAAQABAAOACWxvY2FsaG9zdAAA";
+    fn get_ech_config(s: &str) -> (EchConfigList, Vec<u8>) {
+        let bytes = base64::decode(s).unwrap();
+        let configs = EchConfigList::read(&mut Reader::init(&bytes)).unwrap();
+        assert_eq!(configs.len(), 1);
+        (configs, bytes.to_vec())
+    }
+
+    #[test]
+    fn test_decode_config_list() {
+        let bytes = base64::decode(BASE64_ECHCONFIG_LIST).unwrap();
+        let config_list = EchConfigList::read(&mut Reader::init(&bytes)).unwrap();
+        assert_eq!(config_list.len(), 1);
+        assert_eq!(config_list[0].contents.maximum_name_length, 128);
+    }
+
+    #[test]
+    fn test_echconfig_serialization() {
+        let (configs, _bytes) = get_ech_config(BASE64_ECHCONFIG_LIST);
+        let config = &configs[0];
+        assert_eq!(config.version, EchVersion::V14);
+        assert_eq!(
+            "localhost",
+            config
+                .contents
+                .public_name
+                .as_ref()
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_kem_id,
+            KEM::DHKEM_X25519_HKDF_SHA256
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_symmetric_cipher_suites
+                .len(),
+            2
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_symmetric_cipher_suites[0]
+                .hpke_kdf_id,
+            KDF::HKDF_SHA256
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_symmetric_cipher_suites[0]
+                .hpke_aead_id,
+            AEAD::AES_128_GCM
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_symmetric_cipher_suites[1]
+                .hpke_kdf_id,
+            KDF::HKDF_SHA256
+        );
+        assert_eq!(
+            config
+                .contents
+                .hpke_key_config
+                .hpke_symmetric_cipher_suites[1]
+                .hpke_aead_id,
+            AEAD::CHACHA20_POLY_1305
+        );
+        let mut output = Vec::new();
+        configs.encode(&mut output);
+        assert_eq!(BASE64_ECHCONFIG_LIST, base64::encode(&output));
+    }
+}

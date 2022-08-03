@@ -2469,7 +2469,8 @@ impl Codec for EchConfigContents {
     fn encode(&self, bytes: &mut Vec<u8>) {
         self.hpke_key_config.encode(bytes);
         self.maximum_name_length.encode(bytes);
-        PayloadU16::encode_slice(self.public_name.as_ref().as_ref(), bytes);
+        let dns_name: &webpki::DnsName = &self.public_name.0;
+        PayloadU8::encode_slice(dns_name.as_ref().as_ref(), bytes);
         self.extensions.encode(bytes);
     }
 
@@ -2477,10 +2478,10 @@ impl Codec for EchConfigContents {
         Some(EchConfigContents {
             hpke_key_config: HpkeKeyConfig::read(r)?,
             maximum_name_length: u8::read(r)?,
-            public_name: verify::DnsName(webpki::DnsName::from({
+            public_name: verify::DnsName({
                 let payload = PayloadU8::read(r)?;
-                webpki::DnsNameRef::try_from_ascii(payload.into_inner().as_slice()).ok()?
-            })),
+                webpki::DnsName::from(webpki::DnsNameRef::try_from_ascii(payload.into_inner().as_slice()).ok()?)
+            }),
             extensions: PayloadU16::read(r)?,
         })
     }
@@ -2506,6 +2507,7 @@ impl Codec for EchConfig {
     fn read(r: &mut Reader) -> Option<EchConfig> {
         let version = EchVersion::read(r)?;
         let length = u16::read(r)?;
+        eprintln!("Have version and length");
         Some(EchConfig {
             version,
             contents: EchConfigContents::read(&mut r.sub(length as usize)?)?,
@@ -2613,3 +2615,8 @@ impl Codec for ClientHelloOuterAAD {
         })
     }
 }
+
+/*pub struct EncodedClientHelloInner {
+    pub client_hello: ClientHello,
+    pub zeros: Vec<u8>,
+}*/
