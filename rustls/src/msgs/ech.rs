@@ -1,5 +1,6 @@
-use crate::hash_hs::HandshakeHash;
-use crate::msgs::base::{PayloadU16, PayloadU24};
+
+use crate::hash_hs::{HandshakeHash, HandshakeHashBuffer};
+use crate::msgs::base::{PayloadU16, PayloadU24, PayloadU8};
 use crate::msgs::codec;
 use crate::msgs::codec::{Codec, Reader};
 use crate::msgs::enums::{EchClientHelloType, ExtensionType, HandshakeType};
@@ -10,19 +11,19 @@ use crate::msgs::handshake::{
     HpkeSymmetricCipherSuite, Random, ServerHelloPayload, SessionID,
 };
 use crate::msgs::message::{Message, MessagePayload};
-use crate::tls13::key_schedule::KeyScheduleHandshake;
+use crate::tls13::key_schedule::{KeyScheduleHandshake, PayloadU8Len, hkdf_expand};
 use crate::{rand, SupportedCipherSuite};
 use crate::{Error, ProtocolVersion};
 use hpke_rs::prelude::*;
 use hpke_rs::{Hpke, Mode};
-use hpke_rs_crypto::{
-    types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm},
-};
+use hpke_rs_crypto::types::{AeadAlgorithm, KdfAlgorithm, KemAlgorithm};
 use hpke_rs_rust_crypto::HpkeRustCrypto;
 use ring::digest::{Algorithm, Context};
+use ring::hkdf::{KeyType, self};
 use webpki;
 
 const HPKE_INFO: &[u8; 8] = b"tls ech\0";
+const ACCEPT_CONFIRMATION: &[u8; 23]  = b"ech accept confirmation";
 
 fn hpke_info(config: &EchConfig) -> Vec<u8> {
     let mut info = Vec::with_capacity(128);
@@ -59,7 +60,7 @@ impl EncryptedClientHello {
     ) -> Result<EncryptedClientHello, Error> {
         let configs: EchConfigList = EchConfigList::read(&mut Reader::init(config_bytes))
             .ok_or_else(|| Error::General("Couldn't parse ECH record.".to_string()))?;
-        eprintln!("{:?}", configs);
+        eprintln!("configs {:?}", configs);
         let (config_contents, hpke_info, (suite, hpke_params)) = configs
             .iter()
             .find_map(|config| {
@@ -156,12 +157,14 @@ impl EncryptedClientHello {
         }
 
         // Add the inner SNI
+        eprintln!("Add host name: {:?}", self.hostname);
         inner_hello
             .extensions
             .insert(0, ClientExtension::make_sni(self.hostname.as_ref()));
-        inner_hello
-            .extensions
-            .insert(0, ClientExtension::EncryptedClientHello(EchClientHello::inner()));
+        inner_hello.extensions.insert(
+            0,
+            ClientExtension::EncryptedClientHello(EchClientHello::inner()),
+        );
 
         // Preserve these for reuse
         let original_session_id = inner_hello.session_id;
@@ -207,7 +210,8 @@ impl EncryptedClientHello {
             0,
             ClientExtension::make_sni(
                 self.config_contents
-                    .public_name.0
+                    .public_name
+                    .0
                     .as_ref(),
             ),
         );
@@ -261,13 +265,11 @@ impl EncryptedClientHello {
             payload: Some(PayloadU16::new(payload)),
         };
 
+        eprintln!("client_ech ext: {:#?}", client_ech);
+
         hello
             .extensions
             .insert(0, ClientExtension::EncryptedClientHello(client_ech));
-        //.push();
-        //hello_details
-        //    .sent_extensions
-        //   .push(ExtensionType::EncryptedClientHello);
         HandshakeMessagePayload {
             typ: HandshakeType::ClientHello,
             payload: HandshakePayload::ClientHello(hello),
@@ -276,40 +278,35 @@ impl EncryptedClientHello {
 
     pub(crate) fn confirm_ech(
         &self,
-        ks: &mut KeyScheduleHandshake,
         server_hello: &ServerHelloPayload,
         suite: &SupportedCipherSuite,
-    ) -> Result<([u8; 32], HandshakeHash), Error> {
+    ) -> () {
         // The ClientHelloInner prior to encoding.
         let m = self
             .inner_message
             .as_ref()
-            .ok_or_else(|| Error::General("No ClientHelloInner".to_string()))?;
+            .ok_or_else(|| Error::General("No ClientHelloInner".to_string())).unwrap();
+        eprintln!("CONFIRM");
+        eprintln!("Inner hello: {:#?}", m);
 
         // A confirmation transcript calculated from the ClientHelloInner and the ServerHello,
         // with the last 8 bytes of the server random modified to be zeros.
         let conf = confirmation_transcript(m, server_hello, suite.hash_algorithm());
-
-        // Derive a secret from the current handshake and the confirmation transcript.
-        let derived = ks.server_ech_confirmation_secret(&conf.get_current_hash());
-
-        // Check that first 8 digits of the derived secret match the last 8 digits of the original
-        // server random. This match signals that the server accepted the ECH offer.
-        if derived.into_inner()[..8] != server_hello.random.get_encoding()[24..] {
-            return Err(Error::General("ECH didn't match".to_string()));
-        }
-
-        // Since the ECH offer was accepted, the handshake will move forward with a fresh transcript
-        // calculated from the ClientHelloInner, and the handshake should also use the client random
-        // from the ClientHelloInner. The ServerHello is added to the transcript next, whether or
-        // not the ECH offer was accepted.
-        let ctx = Context::new(suite.hash_algorithm());
-        let mut inner_transcript = HandshakeHash {
-            ctx,
-            client_auth: None
+        
+        let hkdf_algorithm = match self.hpke_params.kdf {
+            KdfAlgorithm::HkdfSha256 => ring::hkdf::HKDF_SHA256,
+            KdfAlgorithm::HkdfSha384 => ring::hkdf::HKDF_SHA384,
+            KdfAlgorithm::HkdfSha512 => ring::hkdf::HKDF_SHA512,
         };
-        inner_transcript.add_message(m);
-        Ok((self.inner_random, inner_transcript))
+
+        eprintln!("hkdf algorithm from ECH: {:?}", hkdf_algorithm);
+
+        let zero_vec = vec![0; hkdf_algorithm.len()];
+        let prk = ring::hkdf::Salt::new(hkdf_algorithm, &zero_vec).extract(&self.inner_random);
+        let payload: PayloadU8 = hkdf_expand(&prk, PayloadU8Len(8), ACCEPT_CONFIRMATION, conf.get_current_hash().as_ref());
+        eprintln!("payload:    {:x?}", payload.into_inner());
+        eprintln!("random: {:?}", server_hello.random);
+
     }
 }
 

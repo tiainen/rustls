@@ -347,6 +347,7 @@ fn validate_encrypted_extensions(
     hello: &ClientHelloDetails,
     exts: &EncryptedExtensions,
 ) -> Result<(), Error> {
+    eprintln!("server encrypted exts: {:?}", exts);
     if exts.has_duplicate_extension() {
         common.send_fatal_alert(AlertDescription::DecodeError);
         return Err(Error::PeerMisbehavedError(

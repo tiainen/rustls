@@ -208,10 +208,12 @@ fn emit_client_hello_for_retry(
         (Vec::new(), ProtocolVersion::Unknown(0))
     };
 
-    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2) && !cx.common.is_quic() && match server_name {
-        ServerName::EncryptedClientHello(_) => false,
-        _ => true,
-    };
+    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2)
+        && !cx.common.is_quic()
+        && match server_name {
+            ServerName::EncryptedClientHello(_) => false,
+            _ => true,
+        };
     let support_tls13 = config.supports_version(ProtocolVersion::TLSv1_3);
 
     let mut supported_versions = Vec::new();
@@ -350,7 +352,13 @@ fn emit_client_hello_for_retry(
     };
 
     let mut chp = match server_name {
-        ServerName::EncryptedClientHello(ref mut ech) => ech.encode(initial_payload),
+        ServerName::EncryptedClientHello(ref mut ech) => {
+            let ch = ech.encode(initial_payload);
+            hello
+                .sent_extensions
+                .push(ExtensionType::EncryptedClientHello);
+            ch
+        }
         _ => HandshakeMessagePayload {
             typ: HandshakeType::ClientHello,
             payload: HandshakePayload::ClientHello(initial_payload),
@@ -594,6 +602,15 @@ impl State<ClientConnectionData> for ExpectServerHello {
             }
         }
 
+
+        // See if ECH was accepted
+        match &self.server_name {
+            ServerName::EncryptedClientHello(ech) => {
+                ech.confirm_ech(server_hello, &self.suite.unwrap());
+            },
+            _ => {}
+        }
+
         // Start our handshake hash, and input the server-hello.
         let mut transcript = self
             .transcript_buffer
@@ -605,6 +622,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
         // handshake_traffic_secret.
         match suite {
             SupportedCipherSuite::Tls13(suite) => {
+                eprintln!("suite.hkdf: {:?}", suite.hkdf_algorithm);
                 let resuming_session = self
                     .resuming_session
                     .and_then(|resuming| match resuming.value {

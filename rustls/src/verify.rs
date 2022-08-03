@@ -344,10 +344,8 @@ impl ServerCertVerifier for WebPkiVerifier {
             ServerName::DnsName(dns_name) => dns_name,
             ServerName::IpAddress(_) => {
                 return Err(Error::UnsupportedNameType);
-            },
-            ServerName::EncryptedClientHello(ech) => {
-                &ech.config_contents.public_name
             }
+            ServerName::EncryptedClientHello(ech) => &ech.config_contents.public_name,
         };
 
         let cert = cert

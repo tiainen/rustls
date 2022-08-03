@@ -526,6 +526,7 @@ where
     f(okm)
 }
 
+#[derive(Debug)]
 pub(crate) struct PayloadU8Len(pub(crate) usize);
 impl hkdf::KeyType for PayloadU8Len {
     fn len(&self) -> usize {

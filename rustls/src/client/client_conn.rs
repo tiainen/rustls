@@ -231,7 +231,12 @@ impl ServerName {
         match self {
             Self::DnsName(dns_name) => Some(dns_name.0.as_ref()),
             Self::IpAddress(_) => None,
-            Self::EncryptedClientHello(ech) => Some(ech.config_contents.public_name.0.as_ref()),
+            Self::EncryptedClientHello(ech) => Some(
+                ech.config_contents
+                    .public_name
+                    .0
+                    .as_ref(),
+            ),
         }
     }
 
@@ -267,7 +272,11 @@ impl ServerName {
             }
             Self::EncryptedClientHello(ech) => {
                 // TODO: not sure how much to encode here
-                let bytes = ech.config_contents.public_name.0.as_ref();
+                let bytes = ech
+                    .config_contents
+                    .public_name
+                    .0
+                    .as_ref();
                 let mut r = Vec::with_capacity(2 + bytes.as_ref().len());
                 r.push(UniqueTypeCode::Ech as u8);
                 r.push(bytes.as_ref().len() as u8);
