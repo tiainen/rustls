@@ -53,6 +53,20 @@ pub struct HpkeParams {
     aead: AeadAlgorithm,
 }
 
+fn expand_outer_ch(src: &[u8], cfgid: u8, mypub: &[u8], cipherlen: usize) -> Vec<u8> {
+    let mut answer = vec![0u8; src.len() + 2 + cipherlen];
+    answer[..src.len()].copy_from_slice(src);
+    let ef0dlength = 1 + 4 + 1 + 2 + mypub.len() + 2 + cipherlen;
+    let lengthloc = src.len() - 42;
+    answer[lengthloc] = (ef0dlength / 256) as u8;
+    answer[lengthloc + 1] = (ef0dlength % 256) as u8;
+    let cipherloc = src.len();
+    answer[cipherloc] = (cipherlen / 256) as u8;
+    answer[cipherloc + 1] = (cipherlen % 256) as u8;
+    println!("expanded outer ch into size {}", answer.len());
+    answer
+}
+
 impl EncryptedClientHello {
     pub fn with_host_and_config_list(
         name: webpki::DnsNameRef,
@@ -161,10 +175,6 @@ impl EncryptedClientHello {
         inner_hello
             .extensions
             .insert(0, ClientExtension::make_sni(self.hostname.as_ref()));
-        inner_hello.extensions.insert(
-            0,
-            ClientExtension::EncryptedClientHello(EchClientHello::inner()),
-        );
 
         // Preserve these for reuse
         let original_session_id = inner_hello.session_id;
@@ -180,18 +190,30 @@ impl EncryptedClientHello {
                 .map(|ext| ext.get_type())
                 .collect(),
         );
-        inner_hello
-            .extensions
-            .push(outer_extensions);
 
+let mut encoded_hello1 = Vec::new();
+inner_hello.encode(&mut encoded_hello1);
+println!("BEFORE extensions: {:02x?}", encoded_hello1);
+        // inner_hello.extensions.push(outer_extensions);
+
+        inner_hello.extensions.push(
+            ClientExtension::EncryptedClientHello(EchClientHello::inner()),
+        );
         // Create the buffer to be encrypted.
         let mut encoded_hello = Vec::new();
         inner_hello.encode(&mut encoded_hello);
+println!("AFTERR extensions: encoded_hello has length {}, {:02x?}", encoded_hello.len(),encoded_hello);
+        while (encoded_hello.len() < 256) {
+            encoded_hello.push(0);
+        }
         inner_hello.session_id = original_session_id;
+println!("step 1, inner_hello = {:?}", inner_hello);
 
         // Remove outer_extensions.
-        inner_hello.extensions.pop();
+        // inner_hello.extensions.pop();
+println!("step 2, inner_hello = {:?}", inner_hello);
         inner_hello.extensions.extend(outers);
+println!("step 3, inner_hello = {:?}", inner_hello);
 
         let chp = HandshakeMessagePayload {
             typ: HandshakeType::ClientHello,
@@ -204,6 +226,7 @@ impl EncryptedClientHello {
             version: ProtocolVersion::TLSv1_0,
             payload: MessagePayload::handshake(chp),
         });
+println!("Created inner msg, msg = {:?}", self.inner_message);
 
         // Add the outer SNI
         hello.extensions.insert(
@@ -235,8 +258,37 @@ impl EncryptedClientHello {
         let (enc, mut context) = hpke
             .setup_sender(&pk_r, self.hpke_info.as_slice(), None, None, None)
             .unwrap();
+        let mut encoded_outer_pre = Vec::new();
+        hello.encode(&mut encoded_outer_pre);
+
+        let mut total_size = encoded_outer_pre.len();
+println!("TOTALSIZE = {}", total_size);
+// create a dummy ech outer extension with the correct size
+let dummy_payload = vec![0u8; encoded_hello.len() + 16];
+
+        let client_ech_pre = EchClientHello {
+            hello_type: EchClientHelloType::OUTER,
+            cipher_suite: Some(self.suite.clone()),
+            config_id: Some(
+                self.config_contents
+                    .hpke_key_config
+                    .config_id,
+            ),
+            enc: Some(PayloadU16::new(enc.clone())),
+            payload: Some(PayloadU16::new(dummy_payload)),
+        };
+
+        let my_extension_pre = ClientExtension::EncryptedClientHello(client_ech_pre);
+        let index_pre = hello.extensions.len();
+        hello
+            .extensions
+            .push(my_extension_pre);
+
         let mut encoded_outer = Vec::new();
         hello.encode(&mut encoded_outer);
+
+        total_size = encoded_outer.len();
+println!("TOTALSIZE after ech extension added = {}", total_size);
         let outer_aad = ClientHelloOuterAAD {
             cipher_suite: self.suite.clone(),
             config_id: self
@@ -247,12 +299,23 @@ impl EncryptedClientHello {
             outer_hello: PayloadU24::new(encoded_outer),
         };
 
-        let mut aad = Vec::new();
-        outer_aad.encode(&mut aad);
 
+
+        let mut aad_orig = Vec::new();
+        outer_aad.encode(&mut aad_orig);
+
+// let mut aad = expand_outer_ch(&aad_orig, self.config_contents.hpke_key_config.config_id, &enc, 272);
+let mut aad = aad_orig;
+// fake aad[12]=0x44;
+// encoded_hello[250]=0x55; // this should give an illegalparameter
+        eprintln!("Sealing, encodedsize = {}", encoded_hello.len());
+println!("seal aad, size = {}, aad = {:02x?}\n", aad.len(), aad);
+println!("seal aadslicet = {:02x?}\n", aad.as_slice());
+println!("seal encodedHello = {:02x?}\n", encoded_hello);
         let payload = context
             .seal(aad.as_slice(), &*encoded_hello)
             .unwrap();
+println!("cipher = {:02x?}", payload);
         let client_ech = EchClientHello {
             hello_type: EchClientHelloType::OUTER,
             cipher_suite: Some(self.suite.clone()),
@@ -266,10 +329,11 @@ impl EncryptedClientHello {
         };
 
         eprintln!("client_ech ext: {:#?}", client_ech);
-
+hello.extensions.remove(index_pre);
+        let my_extension = ClientExtension::EncryptedClientHello(client_ech);
         hello
             .extensions
-            .insert(0, ClientExtension::EncryptedClientHello(client_ech));
+            .push(my_extension);
         HandshakeMessagePayload {
             typ: HandshakeType::ClientHello,
             payload: HandshakePayload::ClientHello(hello),
@@ -320,8 +384,10 @@ fn confirmation_transcript(
         ctx,
         client_auth: None
     };
+eprintln!("CONFIRMTRANSCRIPT, msg m = {:?}", m);
     confirmation_transcript.add_message(m);
     let shc = server_hello_conf(server_hello);
+eprintln!("CONFIRMTRANSCRIPT, update with sh = {:?}", &shc);
     confirmation_transcript.update_raw(&shc);
     confirmation_transcript
 }
@@ -336,6 +402,7 @@ fn server_hello_conf(server_hello: &ServerHelloPayload) -> Vec<u8> {
     hmp_encoded
 }
 
+#[cfg(test)]
 mod test {
     use crate::msgs::enums::{EchVersion, KEM, KDF, AEAD};
 

@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::hash_hs::HandshakeHashBuffer;
 use crate::kx;
 #[cfg(feature = "logging")]
-use crate::log::{debug, trace};
+use crate::log::{info, debug, trace};
 use crate::msgs::base::Payload;
 #[cfg(feature = "quic")]
 use crate::msgs::base::PayloadU16;
@@ -604,12 +604,19 @@ impl State<ClientConnectionData> for ExpectServerHello {
 
 
         // See if ECH was accepted
+        info!("CHECKING IF ECH WAS ACCEPTED for {:?}", &self.server_name);
+        eprintln!("ee CHECK IF ECH WAS ACCEPTED");
         match &self.server_name {
             ServerName::EncryptedClientHello(ech) => {
+                info!("Looks ok!");
                 ech.confirm_ech(server_hello, &self.suite.unwrap());
             },
-            _ => {}
+            _ => {
+                info!("Looks bad!");
+                 }
         }
+        info!("CHECKEd IF ECH WAS ACCEPTED");
+        eprintln!("ee CHECKEd IF ECH WAS ACCEPTED");
 
         // Start our handshake hash, and input the server-hello.
         let mut transcript = self
