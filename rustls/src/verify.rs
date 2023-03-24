@@ -14,6 +14,8 @@ use ring::digest::Digest;
 use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::SystemTime;
+use webpki::DNSNameRef;
+
 
 type SignatureAlgorithms = &'static [&'static webpki::SignatureAlgorithm];
 
@@ -339,15 +341,22 @@ impl ServerCertVerifier for WebPkiVerifier {
     ) -> Result<ServerCertVerified, Error> {
         let (cert, chain, trustroots) = prepare(end_entity, intermediates, &self.roots)?;
         let webpki_now = webpki::Time::try_from(now).map_err(|_| Error::FailedToGetCurrentTime)?;
-
+let mut binding = DnsName(webpki::DnsNameRef::try_from_ascii_str("foo").unwrap().to_owned());
+if let ServerName::EncryptedClientHello(ech) = server_name {
+binding = DnsName(ech.hostname.clone());
+}
         let dns_name = match server_name {
             ServerName::DnsName(dns_name) => dns_name,
             ServerName::IpAddress(_) => {
                 return Err(Error::UnsupportedNameType);
             }
-            ServerName::EncryptedClientHello(ech) => &ech.config_contents.public_name,
+            ServerName::EncryptedClientHello(ech) => &binding,
         };
 
+
+
+            // ServerName::EncryptedClientHello(ech) => &DnsName(ech.hostname),
+println!("PKI1, servername = {:?}", server_name);
         let cert = cert
             .verify_is_valid_tls_server_cert(
                 SUPPORTED_SIG_ALGS,
@@ -358,6 +367,8 @@ impl ServerCertVerifier for WebPkiVerifier {
             .map_err(pki_error)
             .map(|_| cert)?;
 
+// println!("We got cert {:?}", cert.subject());
+// println!("We got cert {:#?}", cert);
         if let Some(policy) = &self.ct_policy {
             policy.verify(end_entity, now, scts)?;
         }
@@ -523,6 +534,7 @@ fn prepare<'a, 'b>(
     roots: &'b RootCertStore,
 ) -> Result<CertChainAndRoots<'a, 'b>, Error> {
     // EE cert must appear first.
+println!("PKI3");
     let cert = webpki::EndEntityCert::try_from(end_entity.0.as_ref()).map_err(pki_error)?;
 
     let intermediates: Vec<&'a [u8]> = intermediates
@@ -572,6 +584,7 @@ impl ClientCertVerifier for AllowAnyAuthenticatedClient {
     ) -> Result<ClientCertVerified, Error> {
         let (cert, chain, trustroots) = prepare(end_entity, intermediates, &self.roots)?;
         let now = webpki::Time::try_from(now).map_err(|_| Error::FailedToGetCurrentTime)?;
+println!("PKI5");
         cert.verify_is_valid_tls_client_cert(
             SUPPORTED_SIG_ALGS,
             &webpki::TlsClientTrustAnchors(&trustroots),
@@ -630,6 +643,7 @@ impl ClientCertVerifier for AllowAnyAnonymousOrAuthenticatedClient {
 
 fn pki_error(error: webpki::Error) -> Error {
     use webpki::Error::*;
+println!("WOOPS");
     match error {
         BadDer | BadDerTime => Error::InvalidCertificateEncoding,
         InvalidSignatureForPublicKey => Error::InvalidCertificateSignature,
@@ -730,6 +744,7 @@ fn verify_signed_struct(
     cert: &Certificate,
     dss: &DigitallySignedStruct,
 ) -> Result<HandshakeSignatureValid, Error> {
+println!("PKI6");
     let possible_algs = convert_scheme(dss.scheme)?;
     let cert = webpki::EndEntityCert::try_from(cert.0.as_ref()).map_err(pki_error)?;
 
@@ -783,6 +798,7 @@ fn verify_tls13(
     cert: &Certificate,
     dss: &DigitallySignedStruct,
 ) -> Result<HandshakeSignatureValid, Error> {
+println!("PKI7");
     let alg = convert_alg_tls13(dss.scheme)?;
 
     let cert = webpki::EndEntityCert::try_from(cert.0.as_ref()).map_err(pki_error)?;

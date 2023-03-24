@@ -697,8 +697,10 @@ impl State<ClientConnectionData> for ExpectCertificateVerify {
             HandshakePayload::CertificateVerify
         )?;
 
-        trace!("Server cert is {:?}", self.server_cert.cert_chain);
+        println!("Server cert is {:?}", self.server_cert.cert_chain);
 
+println!("ServerName = {:?}", self.server_name);
+println!("Step 1, verify cert chain");
         // 1. Verify the certificate chain.
         let (end_entity, intermediates) = self
             .server_cert
@@ -719,6 +721,7 @@ impl State<ClientConnectionData> for ExpectCertificateVerify {
             )
             .map_err(|err| hs::send_cert_error_alert(cx.common, err))?;
 
+println!("Step 2, verify sig on handshake");
         // 2. Verify their signature on the handshake.
         let handshake_hash = self.transcript.get_current_hash();
         let sig_verified = self
