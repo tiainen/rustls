@@ -487,8 +487,11 @@ impl ClientConnection {
             data: &mut data,
         };
 
+println!("[HSH] conn, 0");
         let state = hs::start_handshake(name, extra_exts, config, &mut cx)?;
+println!("[HSH] conn, 1");
         let inner = ConnectionCommon::new(state, data, common_state);
+println!("[HSH] conn, 2");
 
         Ok(Self { inner })
     }

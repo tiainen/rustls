@@ -86,6 +86,7 @@ pub(super) fn start_handshake(
     config: Arc<ClientConfig>,
     cx: &mut ClientContext<'_>,
 ) -> NextStateOrError {
+println!("[HSH] hs::start_handshake, create transcript_buffer");
     let mut transcript_buffer = HandshakeHashBuffer::new();
     if config
         .client_auth_cert_resolver
@@ -137,6 +138,7 @@ pub(super) fn start_handshake(
     let hello_details = ClientHelloDetails::new();
     let sent_tls13_fake_ccs = false;
     let may_send_sct_list = config.verifier.request_scts();
+println!("[HSH]3");
     Ok(emit_client_hello_for_retry(
         config,
         cx,
@@ -390,9 +392,11 @@ fn emit_client_hello_for_retry(
         tls13::emit_fake_ccs(&mut sent_tls13_fake_ccs, cx.common);
     }
 
-    trace!("Sending ClientHello {:#?}", ch);
+    println!("Sending ClientHello {:#?}", ch);
 
+println!("[HSH0] add clienthello msg");
     transcript_buffer.add_message(&ch);
+println!("[HSH0] added clienthello msg");
     cx.common.send_msg(ch, false);
 
     // Calculate the hash of ClientHello and use it to derive EarlyTrafficSecret
@@ -610,6 +614,13 @@ impl State<ClientConnectionData> for ExpectServerHello {
             ServerName::EncryptedClientHello(ech) => {
                 info!("Looks ok!");
                 ech.confirm_ech(server_hello, &self.suite.unwrap());
+println!("[HSHINNER]  {:?}", ech.inner_message);
+                 self.transcript_buffer.clear();
+                 let inner = ech.inner_message.as_ref().ok_or_else(|| Error::General("No ClientHelloInner".to_string())).unwrap();
+    println!("Adding inner {:#?}", inner);
+                 self.transcript_buffer.add_message(&inner);
+                 // self.transcript_buffer.trick();  if we modify the buffer, DecryptError will occur
+
             },
             _ => {
                 info!("Looks bad!");
@@ -622,7 +633,11 @@ impl State<ClientConnectionData> for ExpectServerHello {
         let mut transcript = self
             .transcript_buffer
             .start_hash(suite.hash_algorithm());
+// info!("Transcript = {:?}", self.transcript_buffer.buffer);
+println!("[HSH0] add ServerHello");
         transcript.add_message(&m);
+println!("[HSH0] added ServerHello");
+// info!("after adding sh, Transcript = {:02x?}", &self.transcript_buffer.buffer);
 
         let randoms = ConnectionRandoms::new(self.random, server_hello.random);
         // For TLS1.3, start message encryption using
@@ -801,6 +816,7 @@ impl ExpectServerHelloOrHelloRetryRequest {
             _ => offered_key_share,
         };
 
+println!("[HSH]2");
         Ok(emit_client_hello_for_retry(
             self.next.config,
             cx,

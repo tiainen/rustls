@@ -384,11 +384,12 @@ fn confirmation_transcript(
         ctx,
         client_auth: None
     };
-eprintln!("CONFIRMTRANSCRIPT, msg m = {:?}", m);
+eprintln!("[HSHECH] CONFIRMTRANSCRIPT, msg m = {:?}", m);
     confirmation_transcript.add_message(m);
     let shc = server_hello_conf(server_hello);
-eprintln!("CONFIRMTRANSCRIPT, update with sh = {:?}", &shc);
+eprintln!("[HSHECH] CONFIRMTRANSCRIPT, update with sh = {:?}", &shc);
     confirmation_transcript.update_raw(&shc);
+eprintln!("[HSHECH] CONFIRMTRANSCRIPT done, update with sh = {:?}", &shc);
     confirmation_transcript
 }
 
