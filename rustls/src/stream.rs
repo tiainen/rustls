@@ -112,9 +112,11 @@ where
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
 println!("[STREAM] after complete_prior_io, we have to write {:?}", buf);
         self.complete_prior_io()?;
+/*
 println!("[STREAM] we can now write {:?}", buf);
 println!("[STREAM] First sleep 3 seconds");
  thread::sleep(Duration::from_secs(3));
+*/
 
         let len = self.conn.writer().write(buf)?;
 println!("[STREAM] have to write {}", len);
