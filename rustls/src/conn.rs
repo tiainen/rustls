@@ -226,7 +226,9 @@ impl<'a> io::Read for Reader<'a> {
     /// You may learn the number of bytes available at any time by inspecting
     /// the return of [`Connection::process_new_packets`].
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+println!("[CONN] read into buff"); //  {:?}", buf);
         let len = self.received_plaintext.read(buf)?;
+println!("[CONN] did read into buff XXX and I got {}", len);
 
         if len == 0 && !buf.is_empty() {
             // No bytes available:
@@ -298,10 +300,12 @@ pub trait PlaintextSink {
 
 impl<T> PlaintextSink for ConnectionCommon<T> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+println!("[CONN] plaintextsink, write to buf {:?}", buf);
         Ok(self.send_some_plaintext(buf))
     }
 
     fn write_vectored(&mut self, bufs: &[io::IoSlice<'_>]) -> io::Result<usize> {
+println!("[CONN] plaintextsink, write_vectored to buf!");
         let mut sz = 0;
         for buf in bufs {
             sz += self.send_some_plaintext(buf);
@@ -524,6 +528,7 @@ impl<Data> ConnectionCommon<Data> {
     /// This is a shortcut to the `process_new_packets()` -> `process_msg()` ->
     /// `process_handshake_messages()` path, specialized for the first handshake message.
     pub(crate) fn first_handshake_message(&mut self) -> Result<Option<Message>, Error> {
+println!("[CONN] first_handshake_msg0");
         if self.message_deframer.desynced {
             return Err(Error::CorruptMessage);
         }
@@ -533,7 +538,9 @@ impl<Data> ConnectionCommon<Data> {
             None => return Ok(None),
         };
 
+println!("[CONN] first_handshake_msg1");
         let msg = msg.into_plain_message();
+println!("[CONN] first_handshake_msg got {:?}", msg);
         if !self.handshake_joiner.want_message(&msg) {
             return Err(Error::CorruptMessagePayload(ContentType::Handshake));
         }
@@ -547,6 +554,7 @@ impl<Data> ConnectionCommon<Data> {
                 .send_fatal_alert(AlertDescription::DecodeError);
             return Err(Error::CorruptMessagePayload(ContentType::Handshake));
         }
+println!("[CONN] first_handshake_msg 2 ");
 
         self.common_state.aligned_handshake = self.handshake_joiner.is_empty();
         Ok(self.handshake_joiner.frames.pop_front())
@@ -561,6 +569,7 @@ impl<Data> ConnectionCommon<Data> {
         msg: OpaqueMessage,
         state: Box<dyn State<Data>>,
     ) -> Result<Box<dyn State<Data>>, Error> {
+println!("[CONN] process_msg for {:?}", msg);
         // Drop CCS messages during handshake in TLS1.3
         if msg.typ == ContentType::ChangeCipherSpec
             && !self
@@ -586,6 +595,7 @@ impl<Data> ConnectionCommon<Data> {
             }
         }
 
+println!("We need to decrypt this");
         // Decrypt if demanded by current state.
         let msg = match self
             .common_state
@@ -605,6 +615,7 @@ impl<Data> ConnectionCommon<Data> {
             false => msg.into_plain_message(),
         };
 
+println!("After decrypting, msg = {:?}", msg);
         // For handshake messages, we need to join them before parsing
         // and processing.
         if self.handshake_joiner.want_message(&msg) {
@@ -622,6 +633,7 @@ impl<Data> ConnectionCommon<Data> {
                 })?;
             return self.process_new_handshake_messages(state);
         }
+println!("We need to parse msg {:?}", msg);
 
         // Now we can fully parse the message payload.
         let msg = Message::try_from(msg)?;
@@ -1190,6 +1202,7 @@ impl CommonState {
 
     // Put m into sendable_tls for writing.
     fn queue_tls_message(&mut self, m: OpaqueMessage) {
+println!("[CONN] QUEUE TLS MSG {:?}", m);
         self.sendable_tls.append(m.encode());
     }
 

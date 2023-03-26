@@ -1,3 +1,4 @@
+use std::backtrace::Backtrace;
 use crate::check::inappropriate_handshake_message;
 use crate::conn::{CommonState, ConnectionRandoms, State};
 use crate::enums::{ProtocolVersion, SignatureScheme};
@@ -822,6 +823,7 @@ fn emit_finished_tls13(
         }),
     };
 
+println!("Emit finished handshake: {:?}", m);
     transcript.add_message(&m);
     common.send_msg(m, true);
 }
@@ -1146,6 +1148,10 @@ impl State<ClientConnectionData> for ExpectTraffic {
     }
 
     fn perhaps_write_key_update(&mut self, common: &mut CommonState) {
+let backtrace = Backtrace::capture();
+println!("{:?}", backtrace);
+
+println!("[RLS13] perhaps?");
         if self.want_write_key_update {
             self.want_write_key_update = false;
             common.send_msg_encrypt(Message::build_key_update_notify().into());

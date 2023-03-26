@@ -2,6 +2,9 @@ use crate::conn::{ConnectionCommon, SideData};
 
 use std::io::{IoSlice, Read, Result, Write};
 use std::ops::{Deref, DerefMut};
+use std::thread;
+use std::time::Duration;
+
 
 /// This type implements `io::Read` and `io::Write`, encapsulating
 /// a Connection `C` and an underlying transport `T`, such as a socket.
@@ -50,6 +53,7 @@ where
     S: SideData,
 {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+println!("[STREAM] read");
         self.complete_prior_io()?;
 
         // We call complete_io() in a loop since a single call may read only
@@ -106,14 +110,20 @@ where
     S: SideData,
 {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
+println!("[STREAM] after complete_prior_io, we have to write {:?}", buf);
         self.complete_prior_io()?;
+println!("[STREAM] we can now write {:?}", buf);
+println!("[STREAM] First sleep 3 seconds");
+ thread::sleep(Duration::from_secs(3));
 
         let len = self.conn.writer().write(buf)?;
+println!("[STREAM] have to write {}", len);
 
         // Try to write the underlying transport here, but don't let
         // any errors mask the fact we've consumed `len` bytes.
         // Callers will learn of permanent errors on the next call.
         let _ = self.conn.complete_io(self.sock);
+println!("[STREAM] completed write {}", len);
 
         Ok(len)
     }
