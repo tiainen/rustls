@@ -16,7 +16,6 @@ pub(crate) struct HandshakeHashBuffer {
 
 impl HandshakeHashBuffer {
     pub(crate) fn new() -> Self {
-println!("[HSH] create new HSHBuffer");
         Self {
             buffer: Vec::new(),
             client_auth_enabled: false,
@@ -32,18 +31,12 @@ println!("[HSH] create new HSHBuffer");
         self.buffer.clear();
     }
 
-    pub(crate) fn trick(&mut self) {
-        self.buffer[2] = 4;
-    }
-
     /// Hash/buffer a handshake message.
     pub(crate) fn add_message(&mut self, m: &Message) {
-println!("[HSH] add msg to HASHBuffer with current len {} and m = {:?}", self.buffer.len(), m);
         if let MessagePayload::Handshake { encoded, .. } = &m.payload {
             self.buffer
                 .extend_from_slice(&encoded.0);
         }
-println!("[HSH] added msg to HASHBuffer with current len {}", self.buffer.len());
     }
 
     /// Hash or buffer a byte slice.
@@ -66,7 +59,6 @@ println!("[HSH] added msg to HASHBuffer with current len {}", self.buffer.len())
 
     /// We now know what hash function the verify_data will use.
     pub(crate) fn start_hash(self, alg: &'static digest::Algorithm) -> HandshakeHash {
-println!("[HSH] START HASHBuffer with current len = {}", self.buffer.len());
         let mut ctx = digest::Context::new(alg);
         ctx.update(&self.buffer);
         HandshakeHash {
@@ -103,23 +95,19 @@ impl HandshakeHash {
 
     /// Hash/buffer a handshake message.
     pub(crate) fn add_message(&mut self, m: &Message) -> &mut Self {
-println!("[HSH] add_message start ");
         if let MessagePayload::Handshake { encoded, .. } = &m.payload {
             self.update_raw(&encoded.0);
         }
-println!("[HSH] add_message done ");
         self
     }
 
     /// Hash or buffer a byte slice.
     pub(crate) fn update_raw(&mut self, buf: &[u8]) -> &mut Self {
-println!("[HSH] update_raw start");
         self.ctx.update(buf);
 
         if let Some(buffer) = &mut self.client_auth {
             buffer.extend_from_slice(buf);
         }
-println!("[HSH] update_raw done");
 
         self
     }

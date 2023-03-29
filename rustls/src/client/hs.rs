@@ -86,7 +86,6 @@ pub(super) fn start_handshake(
     config: Arc<ClientConfig>,
     cx: &mut ClientContext<'_>,
 ) -> NextStateOrError {
-println!("[HSH] hs::start_handshake, create transcript_buffer");
     let mut transcript_buffer = HandshakeHashBuffer::new();
     if config
         .client_auth_cert_resolver
@@ -138,7 +137,6 @@ println!("[HSH] hs::start_handshake, create transcript_buffer");
     let hello_details = ClientHelloDetails::new();
     let sent_tls13_fake_ccs = false;
     let may_send_sct_list = config.verifier.request_scts();
-println!("[HSH]3");
     Ok(emit_client_hello_for_retry(
         config,
         cx,
@@ -392,11 +390,9 @@ fn emit_client_hello_for_retry(
         tls13::emit_fake_ccs(&mut sent_tls13_fake_ccs, cx.common);
     }
 
-    println!("Sending ClientHello {:#?}", ch);
+    trace!("Sending ClientHello {:#?}", ch);
 
-println!("[HSH0] add clienthello msg");
     transcript_buffer.add_message(&ch);
-println!("[HSH0] added clienthello msg");
     cx.common.send_msg(ch, false);
 
     // Calculate the hash of ClientHello and use it to derive EarlyTrafficSecret
@@ -609,15 +605,12 @@ impl State<ClientConnectionData> for ExpectServerHello {
 
         // See if ECH was accepted
         info!("CHECKING IF ECH WAS ACCEPTED for {:?}", &self.server_name);
-        eprintln!("ee CHECK IF ECH WAS ACCEPTED");
         match &self.server_name {
             ServerName::EncryptedClientHello(ech) => {
-                info!("Looks ok!");
+                info!("Calculate payload and check with sh random!");
                 ech.confirm_ech(server_hello, &self.suite.unwrap());
-println!("[HSHINNER]  {:?}", ech.inner_message);
                  self.transcript_buffer.clear();
                  let inner = ech.inner_message.as_ref().ok_or_else(|| Error::General("No ClientHelloInner".to_string())).unwrap();
-    println!("Adding inner {:#?}", inner);
                  self.transcript_buffer.add_message(&inner);
                  // self.transcript_buffer.trick();  if we modify the buffer, DecryptError will occur
 
@@ -626,18 +619,13 @@ println!("[HSHINNER]  {:?}", ech.inner_message);
                 info!("Looks bad!");
                  }
         }
-        info!("CHECKEd IF ECH WAS ACCEPTED");
-        eprintln!("ee CHECKEd IF ECH WAS ACCEPTED");
+        info!("CHECKED IF ECH WAS ACCEPTED");
 
         // Start our handshake hash, and input the server-hello.
         let mut transcript = self
             .transcript_buffer
             .start_hash(suite.hash_algorithm());
-// info!("Transcript = {:?}", self.transcript_buffer.buffer);
-println!("[HSH0] add ServerHello");
         transcript.add_message(&m);
-println!("[HSH0] added ServerHello");
-// info!("after adding sh, Transcript = {:02x?}", &self.transcript_buffer.buffer);
 
         let randoms = ConnectionRandoms::new(self.random, server_hello.random);
         // For TLS1.3, start message encryption using
@@ -816,7 +804,6 @@ impl ExpectServerHelloOrHelloRetryRequest {
             _ => offered_key_share,
         };
 
-println!("[HSH]2");
         Ok(emit_client_hello_for_retry(
             self.next.config,
             cx,

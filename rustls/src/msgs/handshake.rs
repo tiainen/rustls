@@ -2600,21 +2600,9 @@ pub struct ClientHelloOuterAAD {
 
 impl Codec for ClientHelloOuterAAD {
     fn encode(&self, bytes: &mut Vec<u8>) {
-let mut tmp: Vec<u8> = Vec::new();
-self.outer_hello.encode(&mut tmp);
-bytes.extend_from_slice(&tmp[3..]);
-// bytes.push(0xfe);
-// bytes.push(0x0d);
-// let num: u16 = 12345;
-// bytes.extend_from_slice(&num.to_le_bytes());
-// bytes.push(0x01);
-// bytes.push(0x3a);
-// bytes.push(0x0);
-        // self.cipher_suite.encode(bytes);
-        // self.config_id.encode(bytes);
-        // self.enc.encode(bytes);
-// bytes.push(0x01);
-// bytes.push(0x10);
+        let mut tmp: Vec<u8> = Vec::new();
+        self.outer_hello.encode(&mut tmp);
+        bytes.extend_from_slice(&tmp[3..]);
     }
 
     fn read(r: &mut Reader) -> Option<ClientHelloOuterAAD> {

@@ -1,4 +1,3 @@
-use std::backtrace::Backtrace;
 use crate::check::inappropriate_handshake_message;
 use crate::conn::{CommonState, ConnectionRandoms, State};
 use crate::enums::{ProtocolVersion, SignatureScheme};
@@ -700,8 +699,8 @@ impl State<ClientConnectionData> for ExpectCertificateVerify {
 
         println!("Server cert is {:?}", self.server_cert.cert_chain);
 
-println!("ServerName = {:?}", self.server_name);
-println!("Step 1, verify cert chain");
+        println!("ServerName = {:?}", self.server_name);
+        println!("Step 1, verify cert chain");
         // 1. Verify the certificate chain.
         let (end_entity, intermediates) = self
             .server_cert
@@ -722,7 +721,7 @@ println!("Step 1, verify cert chain");
             )
             .map_err(|err| hs::send_cert_error_alert(cx.common, err))?;
 
-println!("Step 2, verify sig on handshake");
+        println!("Step 2, verify sig on handshake");
         // 2. Verify their signature on the handshake.
         let handshake_hash = self.transcript.get_current_hash();
         let sig_verified = self
@@ -823,7 +822,7 @@ fn emit_finished_tls13(
         }),
     };
 
-println!("Emit finished handshake: {:?}", m);
+    println!("Emit finished handshake: {:?}", m);
     transcript.add_message(&m);
     common.send_msg(m, true);
 }
@@ -1148,10 +1147,6 @@ impl State<ClientConnectionData> for ExpectTraffic {
     }
 
     fn perhaps_write_key_update(&mut self, common: &mut CommonState) {
-let backtrace = Backtrace::capture();
-println!("{:?}", backtrace);
-
-println!("[RLS13] perhaps?");
         if self.want_write_key_update {
             self.want_write_key_update = false;
             common.send_msg_encrypt(Message::build_key_update_notify().into());

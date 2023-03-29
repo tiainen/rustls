@@ -183,13 +183,6 @@ pub(crate) struct KeyScheduleHandshake {
 }
 
 impl KeyScheduleHandshake {
-    pub(crate) fn server_ech_confirmation_secret(&mut self, hs_hash: &Digest) -> PayloadU8 {
-        self.ks.derive::<PayloadU8, _>(
-            PayloadU8Len(self.ks.algorithm.len()),
-            SecretKind::ServerEchConfirmationSecret,
-            hs_hash.as_ref(),
-        )
-    }
 
     pub(crate) fn sign_server_finish(&self, hs_hash: &Digest) -> hmac::Tag {
         self.ks
