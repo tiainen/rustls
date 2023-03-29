@@ -25,7 +25,7 @@ use std::time::Duration;
          SvcParamValue::EchConfig(e) => e,
          _ => unreachable!(),
      };
-println!("We have an echconfig: {:?}", config);
+     println!("We have an echconfig: {:?}", config);
      let dns_name = webpki::DnsNameRef::try_from_ascii(domain.as_bytes()).unwrap();
      let ech =
          EncryptedClientHello::with_host_and_config_list(dns_name, &config.to_bytes().unwrap())
@@ -50,32 +50,16 @@ println!("We have an echconfig: {:?}", config);
          .with_root_certificates(roots)
          .with_no_client_auth();
 
-println!("waiting A");
-    thread::sleep(Duration::from_secs(1));
-println!("waiting A done");
-
      let mut connection = ClientConnection::new(
          Arc::new(client_config),
          ServerName::EncryptedClientHello(Box::new(ech)),
      )
      .unwrap();
 
-println!("waiting B");
-    thread::sleep(Duration::from_secs(1));
-println!("waiting B done");
-
      let mut sock = TcpStream::connect("cloudflare-ech.com:443").unwrap();
      // let mut sock = TcpStream::connect(domain.to_owned() + ":443").unwrap();
 
-println!("waiting C");
-    thread::sleep(Duration::from_secs(1));
-println!("waiting C done");
-
      let mut tls = rustls::Stream::new(&mut connection, &mut sock);
-
-println!("waiting D");
-    thread::sleep(Duration::from_secs(1));
-println!("waiting D done");
 
      let host_header = format!("Host: {}\r\n", domain);
      let mut headers = String::new();
@@ -94,11 +78,6 @@ println!("waiting D done");
              return;
          }
      }
-
-println!("waiting E");
-    thread::sleep(Duration::from_secs(1));
-println!("waiting E done");
-
      let ciphersuite = tls
          .conn
          .negotiated_cipher_suite()

@@ -168,8 +168,8 @@ const TLS13_AAD_SIZE: usize = 1 + 2 + 2;
 impl MessageEncrypter for Tls13MessageEncrypter {
     fn encrypt(&self, msg: BorrowedPlainMessage, seq: u64) -> Result<OpaqueMessage, Error> {
         let total_len = msg.payload.len() + 1 + self.enc_key.algorithm().tag_len();
-println!("[RUSTLS13], encrypt msg len = {}", total_len);
-println!("[RUSTLS13], msgpayload = {:?}", msg.payload);
+        println!("[RUSTLS13], encrypt msg len = {}", total_len);
+        // println!("[RUSTLS13], msgpayload = {:?}", msg.payload);
         let mut payload = Vec::with_capacity(total_len);
         payload.extend_from_slice(msg.payload);
         msg.typ.encode(&mut payload);
@@ -191,7 +191,7 @@ println!("[RUSTLS13], msgpayload = {:?}", msg.payload);
 
 impl MessageDecrypter for Tls13MessageDecrypter {
     fn decrypt(&self, mut msg: OpaqueMessage, seq: u64) -> Result<PlainMessage, Error> {
-println!("[RUSTLS13], decrypt msg {:?}", msg);
+        println!("[RUSTLS13], decrypt msg {:?}", msg);
         let payload = &mut msg.payload.0;
         if payload.len() < self.dec_key.algorithm().tag_len() {
             return Err(Error::DecryptError);
