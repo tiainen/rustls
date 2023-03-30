@@ -606,7 +606,6 @@ println!("We need to decrypt this");
             false => msg.into_plain_message(),
         };
 
-println!("After decrypting, msg = {:?}", msg);
         // For handshake messages, we need to join them before parsing
         // and processing.
         if self.handshake_joiner.want_message(&msg) {
@@ -624,7 +623,6 @@ println!("After decrypting, msg = {:?}", msg);
                 })?;
             return self.process_new_handshake_messages(state);
         }
-println!("We need to parse msg {:?}", msg);
 
         // Now we can fully parse the message payload.
         let msg = Message::try_from(msg)?;
