@@ -99,6 +99,10 @@ impl PayloadU16 {
         (slice.len() as u16).encode(bytes);
         bytes.extend_from_slice(slice);
     }
+
+    pub fn into_inner(self) -> Vec<u8> {
+        self.0
+    }
 }
 
 impl Codec for PayloadU16 {
@@ -135,6 +139,11 @@ impl PayloadU8 {
 
     pub fn into_inner(self) -> Vec<u8> {
         self.0
+    }
+
+    pub fn encode_slice(slice: &[u8], bytes: &mut Vec<u8>) {
+        (slice.len() as u8).encode(bytes);
+        bytes.extend_from_slice(slice);
     }
 }
 

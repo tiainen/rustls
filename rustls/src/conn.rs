@@ -591,6 +591,7 @@ impl<Data> ConnectionCommon<Data> {
             }
         }
 
+println!("We need to decrypt this");
         // Decrypt if demanded by current state.
         let msg = match self
             .common_state

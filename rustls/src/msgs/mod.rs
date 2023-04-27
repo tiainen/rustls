@@ -9,6 +9,7 @@ pub mod base;
 pub mod ccs;
 pub mod codec;
 pub mod deframer;
+pub mod ech;
 pub mod enums;
 pub mod fragmenter;
 pub mod handshake;

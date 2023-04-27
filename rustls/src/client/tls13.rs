@@ -75,6 +75,7 @@ pub(super) fn handle_server_hello(
     our_key_share: kx::KeyExchange,
     mut sent_tls13_fake_ccs: bool,
 ) -> hs::NextStateOrError {
+    eprintln!("in server hello...");
     validate_server_hello(cx.common, server_hello)?;
 
     let their_key_share = server_hello
@@ -348,6 +349,7 @@ fn validate_encrypted_extensions(
     hello: &ClientHelloDetails,
     exts: &EncryptedExtensions,
 ) -> Result<(), Error> {
+    eprintln!("server encrypted exts: {:?}", exts);
     if exts.has_duplicate_extension() {
         common.send_fatal_alert(AlertDescription::DecodeError);
         return Err(Error::PeerMisbehavedError(
@@ -392,7 +394,7 @@ impl State<ClientConnectionData> for ExpectEncryptedExtensions {
             HandshakeType::EncryptedExtensions,
             HandshakePayload::EncryptedExtensions
         )?;
-        debug!("TLS1.3 encrypted extensions: {:?}", exts);
+        eprintln!("TLS1.3 encrypted extensions: {:?}", exts);
         self.transcript.add_message(&m);
 
         validate_encrypted_extensions(cx.common, &self.hello, exts)?;
@@ -697,8 +699,10 @@ impl State<ClientConnectionData> for ExpectCertificateVerify {
             HandshakePayload::CertificateVerify
         )?;
 
-        trace!("Server cert is {:?}", self.server_cert.cert_chain);
+        println!("Server cert is {:?}", self.server_cert.cert_chain);
 
+        println!("ServerName = {:?}", self.server_name);
+        println!("Step 1, verify cert chain");
         // 1. Verify the certificate chain.
         let (end_entity, intermediates) = self
             .server_cert
@@ -719,6 +723,7 @@ impl State<ClientConnectionData> for ExpectCertificateVerify {
             )
             .map_err(|err| hs::send_cert_error_alert(cx.common, err))?;
 
+        println!("Step 2, verify sig on handshake");
         // 2. Verify their signature on the handshake.
         let handshake_hash = self.transcript.get_current_hash();
         let sig_verified = self
@@ -819,6 +824,7 @@ fn emit_finished_tls13(
         }),
     };
 
+    println!("Emit finished handshake: {:?}", m);
     transcript.add_message(&m);
     common.send_msg(m, true);
 }

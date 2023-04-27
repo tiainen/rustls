@@ -15,6 +15,7 @@ use std::convert::TryFrom;
 use std::sync::Arc;
 use std::time::SystemTime;
 
+
 type SignatureAlgorithms = &'static [&'static webpki::SignatureAlgorithm];
 
 /// Which signature verification mechanisms we support.  No particular
@@ -345,14 +346,22 @@ impl ServerCertVerifier for WebPkiVerifier {
     ) -> Result<ServerCertVerified, Error> {
         let (cert, chain, trustroots) = prepare(end_entity, intermediates, &self.roots)?;
         let webpki_now = webpki::Time::try_from(now).map_err(|_| Error::FailedToGetCurrentTime)?;
-
+        let mut binding = DnsName(webpki::DnsNameRef::try_from_ascii_str("foo").unwrap().to_owned());
+        if let ServerName::EncryptedClientHello(ech) = server_name {
+            binding = DnsName(ech.hostname.clone());
+        }
         let dns_name = match server_name {
             ServerName::DnsName(dns_name) => dns_name,
             ServerName::IpAddress(_) => {
                 return Err(Error::UnsupportedNameType);
             }
+            ServerName::EncryptedClientHello(_ech) => &binding,
         };
 
+
+
+            // ServerName::EncryptedClientHello(ech) => &DnsName(ech.hostname),
+        println!("PKI1, servername = {:?}", server_name);
         let cert = cert
             .verify_is_valid_tls_server_cert(
                 SUPPORTED_SIG_ALGS,
@@ -374,6 +383,32 @@ impl ServerCertVerifier for WebPkiVerifier {
         cert.verify_is_valid_for_dns_name(dns_name.0.as_ref())
             .map_err(pki_error)
             .map(|_| ServerCertVerified::assertion())
+    }
+
+    fn verify_tls12_signature(
+        &self,
+        message: &[u8],
+        cert: &Certificate,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_signed_struct(message, cert, dss)
+    }
+
+    fn verify_tls13_signature(
+        &self,
+        message: &[u8],
+        cert: &Certificate,
+        dss: &DigitallySignedStruct,
+    ) -> Result<HandshakeSignatureValid, Error> {
+        verify_tls13(message, cert, dss)
+    }
+
+    fn supported_verify_schemes(&self) -> Vec<SignatureScheme> {
+        WebPkiVerifier::verification_schemes()
+    }
+
+    fn request_scts(&self) -> bool {
+        true
     }
 }
 
@@ -611,6 +646,7 @@ impl ClientCertVerifier for AllowAnyAnonymousOrAuthenticatedClient {
 
 fn pki_error(error: webpki::Error) -> Error {
     use webpki::Error::*;
+    println!("WOOPS, got an error");
     match error {
         BadDer | BadDerTime => Error::InvalidCertificateEncoding,
         InvalidSignatureForPublicKey => Error::InvalidCertificateSignature,

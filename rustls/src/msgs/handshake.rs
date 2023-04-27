@@ -9,7 +9,9 @@ use crate::msgs::enums::{
     ExtensionType, HandshakeType, HashAlgorithm, KeyUpdateRequest, NamedGroup, PSKKeyExchangeMode,
     ServerNameType, SignatureAlgorithm,
 };
+use crate::msgs::enums::{EchClientHelloType, EchVersion, AEAD, KDF, KEM};
 use crate::rand;
+use crate::verify;
 
 #[cfg(feature = "logging")]
 use crate::log::warn;
@@ -549,6 +551,7 @@ pub type SCTList = VecU16OfPayloadU16;
 declare_u8_vec!(PSKKeyExchangeModes, PSKKeyExchangeMode);
 declare_u16_vec!(KeyShareEntries, KeyShareEntry);
 declare_u8_vec!(ProtocolVersions, ProtocolVersion);
+declare_u8_vec!(OuterExtensions, ExtensionType);
 
 #[derive(Clone, Debug)]
 pub enum ClientExtension {
@@ -568,6 +571,8 @@ pub enum ClientExtension {
     SignedCertificateTimestampRequest,
     TransportParameters(Vec<u8>),
     TransportParametersDraft(Vec<u8>),
+    EncryptedClientHello(EchClientHello),
+    EchOuterExtensions(OuterExtensions),
     EarlyData,
     Unknown(UnknownExtension),
 }
@@ -591,6 +596,8 @@ impl ClientExtension {
             Self::SignedCertificateTimestampRequest => ExtensionType::SCT,
             Self::TransportParameters(_) => ExtensionType::TransportParameters,
             Self::TransportParametersDraft(_) => ExtensionType::TransportParametersDraft,
+            Self::EncryptedClientHello(_) => ExtensionType::EncryptedClientHello,
+            Self::EchOuterExtensions(_) => ExtensionType::EchOuterExtensions,
             Self::EarlyData => ExtensionType::EarlyData,
             Self::Unknown(ref r) => r.typ,
         }
@@ -622,6 +629,8 @@ impl Codec for ClientExtension {
             Self::TransportParameters(ref r) | Self::TransportParametersDraft(ref r) => {
                 sub.extend_from_slice(r)
             }
+            Self::EncryptedClientHello(ref r) => r.encode(&mut sub),
+            Self::EchOuterExtensions(ref r) => r.encode(&mut sub),
             Self::Unknown(ref r) => r.encode(&mut sub),
         }
 
@@ -675,6 +684,12 @@ impl Codec for ClientExtension {
             ExtensionType::TransportParameters => Self::TransportParameters(sub.rest().to_vec()),
             ExtensionType::TransportParametersDraft => {
                 Self::TransportParametersDraft(sub.rest().to_vec())
+            }
+            ExtensionType::EncryptedClientHello => {
+                Self::EncryptedClientHello(EchClientHello::read(&mut sub)?)
+            }
+            ExtensionType::EchOuterExtensions => {
+                Self::EchOuterExtensions(OuterExtensions::read(&mut sub)?)
             }
             ExtensionType::EarlyData if !sub.any_left() => Self::EarlyData,
             _ => Self::Unknown(UnknownExtension::read(typ, &mut sub)),
@@ -848,7 +863,7 @@ impl ServerExtension {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ClientHelloPayload {
     pub client_version: ProtocolVersion,
     pub random: Random,
@@ -1307,6 +1322,19 @@ impl ServerHelloPayload {
             ServerExtension::SupportedVersions(vers) => Some(vers),
             _ => None,
         }
+    }
+
+    pub fn encode_for_ech_confirmation(&self, bytes: &mut Vec<u8>) {
+        self.legacy_version.encode(bytes);
+
+        let rand_vec = self.random.get_encoding();
+        bytes.extend_from_slice(&rand_vec.as_slice()[..24]);
+        bytes.extend_from_slice(&[0u8; 8]);
+
+        self.session_id.encode(bytes);
+        self.cipher_suite.encode(bytes);
+        self.compression_method.encode(bytes);
+        codec::encode_vec_u16(bytes, &self.extensions);
     }
 }
 
@@ -2369,3 +2397,225 @@ impl HandshakeMessagePayload {
         }
     }
 }
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct HpkeSymmetricCipherSuite {
+    pub hpke_kdf_id: KDF,
+    pub hpke_aead_id: AEAD,
+}
+
+impl HpkeSymmetricCipherSuite {
+    // TODO: revisit the default configuration. This is just what Cloudflare ships right now.
+    pub fn default() -> HpkeSymmetricCipherSuite {
+        HpkeSymmetricCipherSuite {
+            hpke_kdf_id: KDF::HKDF_SHA256,
+            hpke_aead_id: AEAD::AES_128_GCM,
+        }
+    }
+}
+
+impl Codec for HpkeSymmetricCipherSuite {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.hpke_kdf_id.encode(bytes);
+        self.hpke_aead_id.encode(bytes);
+    }
+
+    fn read(r: &mut Reader) -> Option<HpkeSymmetricCipherSuite> {
+        Some(HpkeSymmetricCipherSuite {
+            hpke_kdf_id: KDF::read(r)?,
+            hpke_aead_id: AEAD::read(r)?,
+        })
+    }
+}
+
+declare_u16_vec!(HpkeSymmetricCipherSuites, HpkeSymmetricCipherSuite);
+
+#[derive(Clone, Debug)]
+pub struct HpkeKeyConfig {
+    pub config_id: u8,
+    pub hpke_kem_id: KEM,
+    pub hpke_public_key: PayloadU16,
+    pub hpke_symmetric_cipher_suites: HpkeSymmetricCipherSuites,
+}
+
+impl Codec for HpkeKeyConfig {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.config_id.encode(bytes);
+        self.hpke_kem_id.encode(bytes);
+        self.hpke_public_key.encode(bytes);
+        self.hpke_symmetric_cipher_suites
+            .encode(bytes);
+    }
+
+    fn read(r: &mut Reader) -> Option<HpkeKeyConfig> {
+        Some(HpkeKeyConfig {
+            config_id: u8::read(r)?,
+            hpke_kem_id: KEM::read(r)?,
+            hpke_public_key: PayloadU16::read(r)?,
+            hpke_symmetric_cipher_suites: HpkeSymmetricCipherSuites::read(r)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EchConfigContents {
+    pub hpke_key_config: HpkeKeyConfig,
+    pub maximum_name_length: u8,
+    pub public_name: verify::DnsName,
+    pub extensions: PayloadU16,
+}
+
+impl Codec for EchConfigContents {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.hpke_key_config.encode(bytes);
+        self.maximum_name_length.encode(bytes);
+        let dns_name: &webpki::DnsName = &self.public_name.0;
+        PayloadU8::encode_slice(dns_name.as_ref().as_ref(), bytes);
+        self.extensions.encode(bytes);
+    }
+
+    fn read(r: &mut Reader) -> Option<EchConfigContents> {
+        Some(EchConfigContents {
+            hpke_key_config: HpkeKeyConfig::read(r)?,
+            maximum_name_length: u8::read(r)?,
+            public_name: verify::DnsName({
+                let payload = PayloadU8::read(r)?;
+                webpki::DnsName::from(webpki::DnsNameRef::try_from_ascii(payload.into_inner().as_slice()).ok()?)
+            }),
+            extensions: PayloadU16::read(r)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EchConfig {
+    pub version: EchVersion,
+    pub contents: EchConfigContents,
+}
+
+impl Codec for EchConfig {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.version.encode(bytes);
+        let mut contents = Vec::with_capacity(128);
+        self.contents.encode(&mut contents);
+        let length: &mut [u8; 2] = &mut [0, 0];
+        codec::put_u16(contents.len() as u16, length);
+        bytes.extend_from_slice(length);
+        bytes.extend(contents);
+    }
+
+    fn read(r: &mut Reader) -> Option<EchConfig> {
+        let version = EchVersion::read(r)?;
+        let length = u16::read(r)?;
+        eprintln!("Have version and length");
+        Some(EchConfig {
+            version,
+            contents: EchConfigContents::read(&mut r.sub(length as usize)?)?,
+        })
+    }
+}
+
+declare_u16_vec!(EchConfigList, EchConfig);
+
+#[derive(Clone, Debug)]
+pub struct EchClientHello {
+    pub hello_type: EchClientHelloType,
+    pub cipher_suite: Option<HpkeSymmetricCipherSuite>,
+    pub config_id: Option<u8>,
+    pub enc: Option<PayloadU16>,
+    pub payload: Option<PayloadU16>,
+}
+
+impl EchClientHello {
+    pub fn inner() -> EchClientHello {
+        EchClientHello {
+            hello_type: EchClientHelloType::INNER,
+            cipher_suite: None,
+            config_id: None,
+            enc: None,
+            payload: None,
+        }
+    }
+}
+
+impl Codec for EchClientHello {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.hello_type.encode(bytes);
+        if self.hello_type == EchClientHelloType::OUTER {
+            if let Some(cipher_suite) = &self.cipher_suite {
+                cipher_suite.encode(bytes);
+            }
+            if let Some(config_id) = self.config_id {
+                config_id.encode(bytes);
+            }
+            if let Some(enc) = &self.enc {
+                enc.encode(bytes);
+            }
+            if let Some(payload) = &self.payload {
+                payload.encode(bytes);
+            }
+        }
+    }
+
+    fn read(r: &mut Reader) -> Option<EchClientHello> {
+        let hello_type = EchClientHelloType::read(r)?;
+        if hello_type == EchClientHelloType::OUTER {
+            Some(EchClientHello {
+                hello_type,
+                cipher_suite: Some(HpkeSymmetricCipherSuite::read(r)?),
+                config_id: Some(u8::read(r)?),
+                enc: Some(PayloadU16::read(r)?),
+                payload: Some(PayloadU16::read(r)?),
+            })
+        } else {
+            Some(Self::inner())
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ServerEch {
+    pub(crate) retry_configs: EchConfigList,
+}
+
+impl Codec for ServerEch {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        self.retry_configs.encode(bytes);
+    }
+
+    fn read(r: &mut Reader) -> Option<ServerEch> {
+        Some(ServerEch {
+            retry_configs: EchConfigList::read(r)?,
+        })
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct ClientHelloOuterAAD {
+    pub cipher_suite: HpkeSymmetricCipherSuite,
+    pub config_id: u8,
+    pub enc: PayloadU16,
+    pub outer_hello: PayloadU24,
+}
+
+impl Codec for ClientHelloOuterAAD {
+    fn encode(&self, bytes: &mut Vec<u8>) {
+        let mut tmp: Vec<u8> = Vec::new();
+        self.outer_hello.encode(&mut tmp);
+        bytes.extend_from_slice(&tmp[3..]);
+    }
+
+    fn read(r: &mut Reader) -> Option<ClientHelloOuterAAD> {
+        Some(ClientHelloOuterAAD {
+            cipher_suite: HpkeSymmetricCipherSuite::read(r)?,
+            config_id: u8::read(r)?,
+            enc: PayloadU16::read(r)?,
+            outer_hello: PayloadU24::read(r)?,
+        })
+    }
+}
+
+/*pub struct EncodedClientHelloInner {
+    pub client_hello: ClientHello,
+    pub zeros: Vec<u8>,
+}*/

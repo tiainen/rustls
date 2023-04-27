@@ -23,6 +23,7 @@ enum SecretKind {
     ClientEarlyTrafficSecret,
     ClientHandshakeTrafficSecret,
     ServerHandshakeTrafficSecret,
+    ServerEchConfirmationSecret,
     ClientApplicationTrafficSecret,
     ServerApplicationTrafficSecret,
     ExporterMasterSecret,
@@ -38,6 +39,7 @@ impl SecretKind {
             ClientEarlyTrafficSecret => b"c e traffic",
             ClientHandshakeTrafficSecret => b"c hs traffic",
             ServerHandshakeTrafficSecret => b"s hs traffic",
+            ServerEchConfirmationSecret => b"ech accept confirmation",
             ClientApplicationTrafficSecret => b"c ap traffic",
             ServerApplicationTrafficSecret => b"s ap traffic",
             ExporterMasterSecret => b"exp master",
@@ -52,6 +54,7 @@ impl SecretKind {
             ClientEarlyTrafficSecret => "CLIENT_EARLY_TRAFFIC_SECRET",
             ClientHandshakeTrafficSecret => "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
             ServerHandshakeTrafficSecret => "SERVER_HANDSHAKE_TRAFFIC_SECRET",
+            ServerEchConfirmationSecret => "SERVER_ECH_CONFIRMATION_SECRET",
             ClientApplicationTrafficSecret => "CLIENT_TRAFFIC_SECRET_0",
             ServerApplicationTrafficSecret => "SERVER_TRAFFIC_SECRET_0",
             ExporterMasterSecret => "EXPORTER_SECRET",
@@ -185,6 +188,7 @@ pub(crate) struct KeyScheduleHandshake {
 }
 
 impl KeyScheduleHandshake {
+
     pub(crate) fn sign_server_finish(&self, hs_hash: &Digest) -> hmac::Tag {
         self.ks
             .sign_finish(&self.server_handshake_traffic_secret, hs_hash)
@@ -600,6 +604,7 @@ where
     f(okm)
 }
 
+#[derive(Debug)]
 pub(crate) struct PayloadU8Len(pub(crate) usize);
 impl hkdf::KeyType for PayloadU8Len {
     fn len(&self) -> usize {

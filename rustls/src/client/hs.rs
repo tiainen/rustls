@@ -7,7 +7,7 @@ use crate::error::Error;
 use crate::hash_hs::HandshakeHashBuffer;
 use crate::kx;
 #[cfg(feature = "logging")]
-use crate::log::{debug, trace};
+use crate::log::{info, debug, trace};
 use crate::msgs::base::Payload;
 #[cfg(feature = "quic")]
 use crate::msgs::base::PayloadU16;
@@ -187,7 +187,7 @@ fn emit_client_hello_for_retry(
     mut hello: ClientHelloDetails,
     session_id: Option<SessionID>,
     retryreq: Option<&HelloRetryRequest>,
-    server_name: ServerName,
+    mut server_name: ServerName,
     key_share: Option<kx::KeyExchange>,
     extra_exts: Vec<ClientExtension>,
     may_send_sct_list: bool,
@@ -208,7 +208,12 @@ fn emit_client_hello_for_retry(
         (Vec::new(), ProtocolVersion::Unknown(0))
     };
 
-    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2) && !cx.common.is_quic();
+    let support_tls12 = config.supports_version(ProtocolVersion::TLSv1_2)
+        && !cx.common.is_quic()
+        && match server_name {
+            ServerName::EncryptedClientHello(_) => false,
+            _ => true,
+        };
     let support_tls13 = config.supports_version(ProtocolVersion::TLSv1_3);
 
     let mut supported_versions = Vec::new();
@@ -337,16 +342,27 @@ fn emit_client_hello_for_retry(
     // We don't do renegotiation at all, in fact.
     cipher_suites.push(CipherSuite::TLS_EMPTY_RENEGOTIATION_INFO_SCSV);
 
-    let mut chp = HandshakeMessagePayload {
-        typ: HandshakeType::ClientHello,
-        payload: HandshakePayload::ClientHello(ClientHelloPayload {
-            client_version: ProtocolVersion::TLSv1_2,
-            random,
-            session_id,
-            cipher_suites,
-            compression_methods: vec![Compression::Null],
-            extensions: exts,
-        }),
+    let initial_payload = ClientHelloPayload {
+        client_version: ProtocolVersion::TLSv1_2,
+        random,
+        session_id,
+        cipher_suites,
+        compression_methods: vec![Compression::Null],
+        extensions: exts,
+    };
+
+    let mut chp = match server_name {
+        ServerName::EncryptedClientHello(ref mut ech) => {
+            let ch = ech.encode(initial_payload);
+            hello
+                .sent_extensions
+                .push(ExtensionType::EncryptedClientHello);
+            ch
+        }
+        _ => HandshakeMessagePayload {
+            typ: HandshakeType::ClientHello,
+            payload: HandshakePayload::ClientHello(initial_payload),
+        },
     };
 
     let early_key_schedule = if let Some(resuming) = fill_in_binder {
@@ -467,7 +483,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
     fn handle(mut self: Box<Self>, cx: &mut ClientContext<'_>, m: Message) -> NextStateOrError {
         let server_hello =
             require_handshake_msg!(m, HandshakeType::ServerHello, HandshakePayload::ServerHello)?;
-        trace!("We got ServerHello {:#?}", server_hello);
+        eprintln!("We got ServerHello {:#?}", server_hello);
 
         use crate::ProtocolVersion::{TLSv1_2, TLSv1_3};
         let tls13_supported = self.config.supports_version(TLSv1_3);
@@ -586,6 +602,25 @@ impl State<ClientConnectionData> for ExpectServerHello {
             }
         }
 
+
+        // See if ECH was accepted
+        info!("CHECKING IF ECH WAS ACCEPTED for {:?}", &self.server_name);
+        match &self.server_name {
+            ServerName::EncryptedClientHello(ech) => {
+                info!("Calculate payload and check with sh random!");
+                ech.confirm_ech(server_hello, &self.suite.unwrap());
+                 self.transcript_buffer.clear();
+                 let inner = ech.inner_message.as_ref().ok_or_else(|| Error::General("No ClientHelloInner".to_string())).unwrap();
+                 self.transcript_buffer.add_message(&inner);
+                 // self.transcript_buffer.trick();  if we modify the buffer, DecryptError will occur
+
+            },
+            _ => {
+                info!("Looks bad!");
+                 }
+        }
+        info!("CHECKED IF ECH WAS ACCEPTED");
+
         // Start our handshake hash, and input the server-hello.
         let mut transcript = self
             .transcript_buffer
@@ -597,6 +632,7 @@ impl State<ClientConnectionData> for ExpectServerHello {
         // handshake_traffic_secret.
         match suite {
             SupportedCipherSuite::Tls13(suite) => {
+                eprintln!("suite.hkdf: {:?}", suite.hkdf_algorithm);
                 let resuming_session = self
                     .resuming_session
                     .and_then(|resuming| match resuming.value {

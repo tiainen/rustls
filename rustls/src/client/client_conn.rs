@@ -5,6 +5,7 @@ use crate::error::Error;
 use crate::kx::SupportedKxGroup;
 #[cfg(feature = "logging")]
 use crate::log::trace;
+use crate::msgs::ech::EncryptedClientHello;
 #[cfg(feature = "quic")]
 use crate::msgs::enums::AlertDescription;
 use crate::msgs::handshake::ClientExtension;
@@ -226,7 +227,7 @@ impl ClientConfig {
 /// # let _: ServerName = x;
 /// ```
 #[non_exhaustive]
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+#[derive(Debug)]
 pub enum ServerName {
     /// The server is identified by a DNS name.  The name
     /// is sent in the TLS Server Name Indication (SNI)
@@ -236,6 +237,9 @@ pub enum ServerName {
     /// The server is identified by an IP address. SNI is not
     /// done.
     IpAddress(IpAddr),
+
+    /// Using an EncryptedClientHello (Inner and Outer DNS names)
+    EncryptedClientHello(Box<EncryptedClientHello>),
 }
 
 impl ServerName {
@@ -246,6 +250,12 @@ impl ServerName {
         match self {
             Self::DnsName(dns_name) => Some(dns_name.0.as_ref()),
             Self::IpAddress(_) => None,
+            Self::EncryptedClientHello(ech) => Some(
+                ech.config_contents
+                    .public_name
+                    .0
+                    .as_ref(),
+            ),
         }
     }
 
@@ -254,6 +264,7 @@ impl ServerName {
         enum UniqueTypeCode {
             DnsName = 0x01,
             IpAddr = 0x02,
+            Ech = 0x03,
         }
 
         match self {
@@ -275,6 +286,20 @@ impl ServerName {
                 r.push(UniqueTypeCode::IpAddr as u8);
                 r.push(bytes.len() as u8);
                 r.extend_from_slice(bytes);
+
+                r
+            }
+            Self::EncryptedClientHello(ech) => {
+                // TODO: not sure how much to encode here
+                let bytes = ech
+                    .config_contents
+                    .public_name
+                    .0
+                    .as_ref();
+                let mut r = Vec::with_capacity(2 + bytes.as_ref().len());
+                r.push(UniqueTypeCode::Ech as u8);
+                r.push(bytes.as_ref().len() as u8);
+                r.extend_from_slice(bytes.as_ref());
 
                 r
             }

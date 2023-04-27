@@ -3,6 +3,7 @@ use crate::conn::{ConnectionCommon, SideData};
 use std::io::{IoSlice, Read, Result, Write};
 use std::ops::{Deref, DerefMut};
 
+
 /// This type implements `io::Read` and `io::Write`, encapsulating
 /// a Connection `C` and an underlying transport `T`, such as a socket.
 ///
@@ -107,7 +108,6 @@ where
 {
     fn write(&mut self, buf: &[u8]) -> Result<usize> {
         self.complete_prior_io()?;
-
         let len = self.conn.writer().write(buf)?;
 
         // Try to write the underlying transport here, but don't let

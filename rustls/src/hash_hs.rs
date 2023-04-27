@@ -27,6 +27,9 @@ impl HandshakeHashBuffer {
     pub(crate) fn set_client_auth_enabled(&mut self) {
         self.client_auth_enabled = true;
     }
+    pub(crate) fn clear(&mut self) {
+        self.buffer.clear();
+    }
 
     /// Hash/buffer a handshake message.
     pub(crate) fn add_message(&mut self, m: &Message) {
@@ -77,10 +80,10 @@ impl HandshakeHashBuffer {
 /// This is disabled in cases where client auth is not possible.
 pub(crate) struct HandshakeHash {
     /// None before we know what hash function we're using
-    ctx: digest::Context,
+    pub(crate) ctx: digest::Context,
 
     /// buffer for client-auth.
-    client_auth: Option<Vec<u8>>,
+    pub(crate) client_auth: Option<Vec<u8>>,
 }
 
 impl HandshakeHash {
@@ -99,7 +102,7 @@ impl HandshakeHash {
     }
 
     /// Hash or buffer a byte slice.
-    fn update_raw(&mut self, buf: &[u8]) -> &mut Self {
+    pub(crate) fn update_raw(&mut self, buf: &[u8]) -> &mut Self {
         self.ctx.update(buf);
 
         if let Some(buffer) = &mut self.client_auth {
