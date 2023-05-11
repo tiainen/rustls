@@ -408,14 +408,14 @@ localhost:fport.
 RSA private key.
 
 Usage:
-  tlsserver --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
+  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
      [--proto PROTO ...] [--protover PROTOVER ...] [options] echo
-  tlsserver --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
+  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
      [--proto PROTO ...] [--protover PROTOVER ...] [options] http
-  tlsserver --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
+  tlsserver-mio --certs CERTFILE --key KEYFILE [--suite SUITE ...] \
      [--proto PROTO ...] [--protover PROTOVER ...] [options] forward <fport>
-  tlsserver (--version | -v)
-  tlsserver (--help | -h)
+  tlsserver-mio (--version | -v)
+  tlsserver-mio (--help | -h)
 
 Options:
     -p, --port PORT     Listen on PORT [default: 443].
@@ -541,7 +541,7 @@ fn load_private_key(filename: &str) -> rustls::PrivateKey {
 fn load_ocsp(filename: &Option<String>) -> Vec<u8> {
     let mut ret = Vec::new();
 
-    if let &Some(ref name) = filename {
+    if let Some(name) = filename {
         fs::File::open(name)
             .expect("cannot open ocsp file")
             .read_to_end(&mut ret)
