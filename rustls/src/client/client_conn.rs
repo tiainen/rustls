@@ -13,6 +13,8 @@ use crate::sign;
 use crate::suites::SupportedCipherSuite;
 use crate::verify;
 use crate::versions;
+#[cfg(feature = "secret_extraction")]
+use crate::ExtractedSecrets;
 use crate::KeyLog;
 
 use super::hs;
@@ -141,11 +143,28 @@ pub struct ClientConfig {
     /// does nothing.
     pub key_log: Arc<dyn KeyLog>,
 
+    /// Allows traffic secrets to be extracted after the handshake,
+    /// e.g. for kTLS setup.
+    #[cfg(feature = "secret_extraction")]
+    pub enable_secret_extraction: bool,
+
     /// Whether to send data on the first flight ("early data") in
     /// TLS 1.3 handshakes.
     ///
     /// The default is false.
     pub enable_early_data: bool,
+}
+
+impl fmt::Debug for ClientConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientConfig")
+            .field("alpn_protocols", &self.alpn_protocols)
+            .field("max_fragment_size", &self.max_fragment_size)
+            .field("enable_tickets", &self.enable_tickets)
+            .field("enable_sni", &self.enable_sni)
+            .field("enable_early_data", &self.enable_early_data)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ClientConfig {
@@ -325,6 +344,8 @@ pub(super) mod danger {
     use super::ClientConfig;
 
     /// Accessor for dangerous configuration options.
+    #[derive(Debug)]
+    #[cfg_attr(docsrs, doc(cfg(feature = "dangerous_configuration")))]
     pub struct DangerousClientConfig<'a> {
         /// The underlying ClientConfig
         pub cfg: &'a mut ClientConfig,
@@ -480,6 +501,10 @@ impl ClientConnection {
         let mut common_state = CommonState::new(Side::Client);
         common_state.set_max_fragment_size(config.max_fragment_size)?;
         common_state.protocol = proto;
+        #[cfg(feature = "secret_extraction")]
+        {
+            common_state.enable_secret_extraction = config.enable_secret_extraction;
+        }
         let mut data = ClientConnectionData::new();
 
         let mut cx = hs::ClientContext {
@@ -538,6 +563,12 @@ impl ClientConnection {
                     .common_state
                     .send_early_plaintext(&data[..sz])
             })
+    }
+
+    /// Extract secrets, so they can be used when configuring kTLS, for example.
+    #[cfg(feature = "secret_extraction")]
+    pub fn extract_secrets(self) -> Result<ExtractedSecrets, Error> {
+        self.inner.extract_secrets()
     }
 }
 
@@ -631,6 +662,7 @@ impl quic::QuicExt for ClientConnection {
 
 /// Methods specific to QUIC client sessions
 #[cfg(feature = "quic")]
+#[cfg_attr(docsrs, doc(cfg(feature = "quic")))]
 pub trait ClientQuicExt {
     /// Make a new QUIC ClientConnection. This differs from `ClientConnection::new()`
     /// in that it takes an extra argument, `params`, which contains the

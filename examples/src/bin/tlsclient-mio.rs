@@ -291,9 +291,9 @@ If --cafile is not supplied, a built-in set of CA certificates
 are used from the webpki-roots crate.
 
 Usage:
-  tlsclient [options] [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] <hostname>
-  tlsclient (--version | -v)
-  tlsclient (--help | -h)
+  tlsclient-mio [options] [--suite SUITE ...] [--proto PROTO ...] [--protover PROTOVER ...] <hostname>
+  tlsclient-mio (--version | -v)
+  tlsclient-mio (--help | -h)
 
 Options:
     -p, --port PORT     Connect to PORT [default: 443].
@@ -471,7 +471,7 @@ fn make_config(args: &Args) -> Arc<rustls::ClientConfig> {
     if args.flag_cafile.is_some() {
         let cafile = args.flag_cafile.as_ref().unwrap();
 
-        let certfile = fs::File::open(&cafile).expect("Cannot open CA file");
+        let certfile = fs::File::open(cafile).expect("Cannot open CA file");
         let mut reader = BufReader::new(certfile);
         root_store.add_parsable_certificates(&rustls_pemfile::certs(&mut reader).unwrap());
     } else {

@@ -14,6 +14,8 @@ use crate::sign;
 use crate::suites::SupportedCipherSuite;
 use crate::vecbuf::ChunkVecBuffer;
 use crate::verify;
+#[cfg(feature = "secret_extraction")]
+use crate::ExtractedSecrets;
 use crate::KeyLog;
 #[cfg(feature = "quic")]
 use crate::{conn::Protocol, quic};
@@ -244,6 +246,11 @@ pub struct ServerConfig {
     /// does nothing.
     pub key_log: Arc<dyn KeyLog>,
 
+    /// Allows traffic secrets to be extracted after the handshake,
+    /// e.g. for kTLS setup.
+    #[cfg(feature = "secret_extraction")]
+    pub enable_secret_extraction: bool,
+
     /// Amount of early data to accept for sessions created by
     /// this config.  Specify 0 to disable early data.  The
     /// default is 0.
@@ -277,6 +284,18 @@ pub struct ServerConfig {
     /// sent by the server comes after receiving and validating the client's
     /// handshake up to the `Finished` message.  This is the safest option.
     pub send_half_rtt_data: bool,
+}
+
+impl fmt::Debug for ServerConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ServerConfig")
+            .field("ignore_client_order", &self.ignore_client_order)
+            .field("max_fragment_size", &self.max_fragment_size)
+            .field("alpn_protocols", &self.alpn_protocols)
+            .field("max_early_data_size", &self.max_early_data_size)
+            .field("send_half_rtt_data", &self.send_half_rtt_data)
+            .finish_non_exhaustive()
+    }
 }
 
 impl ServerConfig {
@@ -324,8 +343,8 @@ impl<'a> std::io::Read for ReadEarlyData<'a> {
     }
 
     #[cfg(read_buf)]
-    fn read_buf(&mut self, buf: &mut io::ReadBuf<'_>) -> io::Result<()> {
-        self.early_data.read_buf(buf)
+    fn read_buf(&mut self, cursor: io::BorrowedCursor<'_>) -> io::Result<()> {
+        self.early_data.read_buf(cursor)
     }
 }
 
@@ -350,6 +369,10 @@ impl ServerConnection {
     ) -> Result<Self, Error> {
         let mut common = CommonState::new(Side::Server);
         common.set_max_fragment_size(config.max_fragment_size)?;
+        #[cfg(feature = "secret_extraction")]
+        {
+            common.enable_secret_extraction = config.enable_secret_extraction;
+        }
         Ok(Self {
             inner: ConnectionCommon::new(
                 Box::new(hs::ExpectClientHello::new(config, extra_exts)),
@@ -439,6 +462,12 @@ impl ServerConnection {
         } else {
             None
         }
+    }
+
+    /// Extract secrets, so they can be used when configuring kTLS, for example.
+    #[cfg(feature = "secret_extraction")]
+    pub fn extract_secrets(self) -> Result<ExtractedSecrets, Error> {
+        self.inner.extract_secrets()
     }
 }
 
@@ -530,28 +559,26 @@ impl Acceptor {
 
     /// Check if a `ClientHello` message has been received.
     ///
-    /// Returns an error if the `ClientHello` message is invalid or if the acceptor has already
-    /// yielded an [`Accepted`]. Returns `Ok(None)` if no complete `ClientHello` has been received
-    /// yet.
+    /// Returns `Ok(None)` if the complete `ClientHello` has not yet been received.
+    /// Do more I/O and then call this function again.
+    ///
+    /// Returns `Ok(Some(accepted))` if the connection has been accepted. Call
+    /// `accepted.into_connection()` to continue. Do not call this function again.
+    ///
+    /// Returns `Err(err)` if an error occurred. Do not call this function again.
     pub fn accept(&mut self) -> Result<Option<Accepted>, Error> {
         let mut connection = match self.inner.take() {
             Some(conn) => conn,
             None => {
-                return Err(Error::General(
-                    "cannot accept after successful acceptance".into(),
-                ));
+                return Err(Error::General("Acceptor polled after completion".into()));
             }
         };
 
-        let message = match connection.first_handshake_message() {
-            Ok(Some(msg)) => msg,
-            Ok(None) => {
+        let message = match connection.first_handshake_message()? {
+            Some(msg) => msg,
+            None => {
                 self.inner = Some(connection);
                 return Ok(None);
-            }
-            Err(e) => {
-                self.inner = Some(connection);
-                return Err(e);
             }
         };
 
@@ -600,6 +627,14 @@ impl Accepted {
         self.connection
             .common_state
             .set_max_fragment_size(config.max_fragment_size)?;
+
+        #[cfg(feature = "secret_extraction")]
+        {
+            self.connection
+                .common_state
+                .enable_secret_extraction = config.enable_secret_extraction;
+        }
+
         let state = hs::ExpectClientHello::new(config, Vec::new());
         let mut cx = hs::ServerContext {
             common: &mut self.connection.common_state,
@@ -680,9 +715,9 @@ impl EarlyDataState {
     }
 
     #[cfg(read_buf)]
-    fn read_buf(&mut self, buf: &mut io::ReadBuf<'_>) -> io::Result<()> {
+    fn read_buf(&mut self, cursor: io::BorrowedCursor<'_>) -> io::Result<()> {
         match self {
-            Self::Accepted(ref mut received) => received.read_buf(buf),
+            Self::Accepted(ref mut received) => received.read_buf(cursor),
             _ => Err(io::Error::from(io::ErrorKind::BrokenPipe)),
         }
     }
@@ -711,11 +746,12 @@ fn test_read_in_new_state() {
 #[cfg(read_buf)]
 #[test]
 fn test_read_buf_in_new_state() {
+    use std::io::BorrowedBuf;
+
+    let mut buf = [0u8; 5];
+    let mut buf: BorrowedBuf<'_> = buf.as_mut_slice().into();
     assert_eq!(
-        format!(
-            "{:?}",
-            EarlyDataState::default().read_buf(&mut io::ReadBuf::new(&mut [0u8; 5]))
-        ),
+        format!("{:?}", EarlyDataState::default().read_buf(buf.unfilled())),
         "Err(Kind(BrokenPipe))"
     );
 }
@@ -777,6 +813,7 @@ impl quic::QuicExt for ServerConnection {
 
 /// Methods specific to QUIC server sessions
 #[cfg(feature = "quic")]
+#[cfg_attr(docsrs, doc(cfg(feature = "quic")))]
 pub trait ServerQuicExt {
     /// Make a new QUIC ServerConnection. This differs from `ServerConnection::new()`
     /// in that it takes an extra argument, `params`, which contains the

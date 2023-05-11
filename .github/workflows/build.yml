@@ -20,8 +20,8 @@ jobs:
           - stable
           - beta
           - nightly
-          - 1.56 # MSRV
-        os: [ubuntu-18.04]
+          - 1.57 # MSRV
+        os: [ubuntu-20.04]
         # but only stable on macos/windows (slower platforms)
         include:
           - os: macos-latest
@@ -85,7 +85,7 @@ jobs:
 
   bogo:
     name: BoGo test suite
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -110,7 +110,7 @@ jobs:
 
   fuzz:
     name: Smoke-test fuzzing targets
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -137,7 +137,7 @@ jobs:
 
   benchmarks:
     name: Smoke-test benchmarks
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -155,7 +155,7 @@ jobs:
 
   docs:
     name: Check for documentation errors
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
@@ -176,20 +176,12 @@ jobs:
 
   coverage:
     name: Measure coverage
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
         with:
           persist-credentials: false
-
-      # Install a version of clang that (more or less) has the same coverage
-      # instrumentation format.
-      - name: Install LLVM
-        run: |
-          curl https://apt.llvm.org/llvm-snapshot.gpg.key | sudo apt-key add -
-          sudo apt-add-repository -y 'deb http://apt.llvm.org/bionic/ llvm-toolchain-bionic-14 main'
-          sudo apt-get install -y clang-14
 
       - name: Install rust toolchain
         uses: actions-rs/toolchain@v1
@@ -197,17 +189,18 @@ jobs:
           toolchain: nightly
           override: true
           default: true
+          components: llvm-tools
+
+      - name: Install cargo-llvm-cov
+        run: cargo install cargo-llvm-cov
 
       - name: Install golang toolchain
         uses: actions/setup-go@v2
         with:
           go-version: "1.17.1"
 
-      - name: Build lcov
-        run: admin/build-lcov
-
       - name: Measure coverage
-        run: admin/coverage
+        run: ./admin/coverage --lcov --output-path final.info
 
       - name: Report to codecov.io
         uses: codecov/codecov-action@v1.0.10
@@ -218,7 +211,7 @@ jobs:
 
   minver:
     name: Check minimum versions
-    runs-on: ubuntu-18.04
+    runs-on: ubuntu-20.04
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
