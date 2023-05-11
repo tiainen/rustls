@@ -25,7 +25,7 @@ webpki = { version = "0.22.0", features = ["alloc", "std"] }
 # Temporary until ring has HPKE.
 # Version 0.0.8 supports draft-cfrg-hpke-08, which corresponds to
 # ECH draft-10, the version currently running on crypto.cloudflare.com.
-hpke-rs = "0.1.0"
+hpke-rs = "0.0.12"
 hpke-rs-crypto = "0.1.1"
 hpke-rs-rust-crypto = "0.1.1"
 
