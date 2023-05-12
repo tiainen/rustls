@@ -46,7 +46,13 @@ pub struct EncryptedClientHello {
     // outer_only_exts?
 }
 
-#[derive(Debug)]
+impl Clone for EncryptedClientHello {
+    fn clone(&self) -> Self {
+        Self { hostname: self.hostname.clone(), hpke_params: self.hpke_params.clone(), hpke_info: self.hpke_info.clone(), suite: self.suite.clone(), config_contents: self.config_contents.clone(), inner_message: None, inner_random: self.inner_random.clone(), compressed_extensions: self.compressed_extensions.clone() }
+    }
+}
+
+#[derive(Clone, Debug)]
 pub struct HpkeParams {
     kem: KemAlgorithm,
     kdf: KdfAlgorithm,
